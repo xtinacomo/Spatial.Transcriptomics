@@ -1,0 +1,566 @@
+---
+title: "ST Subset Analysis; Siegenthaler"
+author: "Caitlin Winkler"
+date: "`r Sys.Date()`"
+output:
+  html_notebook:
+    toc: TRUE
+    toc_depth: 4
+    toc_float: TRUE
+    theme: united
+    highlight: tango
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, error = FALSE) 
+```
+
+Project: *Spatial transcriptomics to study mechanisms of meninges development.*
+2021 RBI Pilot Award Project
+
+Subsetting the processed ST Seurat object generated from the *01_seurat_spatial.Rmd* workflow to only include certain anatomical regions of interest: medial cortex, lateral cortex, MGE, LGE, and midline. Data consists of four samples from E14 embryos (2 control wild-type samples, and 2 mutant *Foxc1-KO* samples). Mice that lack the transcription factor *Foxc1* (*Foxc1-KO*) do not develop normal meningeal fibroblast layers around the forebrain, leading to defects in cortical neurogenesis caused by lack of meninges-derived factors. Notably, the neocortex is grossly elongated in *Foxc1-KO* mutants.
+
+# 1 Preparation
+
+Here, we prepare our notebook for analysis. This includes loading relevant libraries, defining custom color palettes (optional), and defining any custom helper functions (in this notebook, we will use a `convertHumanGeneList()` function for cell cycle scoring; see section 5).
+
+## 1.1 Load R packages
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, error = FALSE) 
+```
+
+
+
+```{r setup, include=FALSE}
+setwd("/Users/christinacomo/Desktop/Spatial")
+getwd()
+```
+
+
+```{r}
+library(ggplot2)
+library(ggsci)
+library(hdf5r)
+library(patchwork)
+library(RColorBrewer)
+library(Seurat)
+library(tidyverse)
+library(biomaRt)
+library(dplyr)
+library(Matrix)
+library(SeuratData)
+library(tidyr)
+```
+
+## 1.2 Define colors
+
+```{r}
+custom_colors <- list()
+colors_dutch <- c(
+  '#FFC312','#C4E538','#12CBC4','#FDA7DF','#ED4C67',
+  '#F79F1F','#A3CB38','#1289A7','#D980FA','#B53471',
+  '#EE5A24','#009432','#0652DD','#9980FA','#833471',
+  '#EA2027','#006266','#1B1464','#5758BB','#6F1E51'
+)
+colors_spanish <- c(
+  '#40407a','#706fd3','#f7f1e3','#34ace0','#33d9b2',
+  '#2c2c54','#474787','#aaa69d','#227093','#218c74',
+  '#ff5252','#ff793f','#d1ccc0','#ffb142','#ffda79',
+  '#b33939','#cd6133','#84817a','#cc8e35','#ccae62'
+)
+custom_colors$discrete <- c(colors_dutch, colors_spanish)
+custom_colors$cell_cycle <- setNames(
+  c('#45aaf2', '#f1c40f', '#e74c3c', '#7f8c8d'),
+  c('G1',      'S',       'G2M',     '-')
+)
+```
+
+# 2 Load Data
+
+In the previous notebook (*01_seurat_spatial.Rmd*), we generated a processed Seurat object which includes spots of the entire E14 head for each of our four samples. Here, we will load in our previously generated Seurat object which we will then subset to only include spots corresponding to our anatomical regions of interest.
+
+## 2.1 Load in the processed seurat object
+
+```{r}
+so <- readRDS("/Users/christinacomo/Desktop/Spatial/RDS_files/so_all.rds")
+```
+
+## 2.2 Load in dataframes
+
+For each section, spots corresponding to the regions of interest (medial cortex, laterial cortex, MGE, LGE, and midline) were selected using the 10X Loupe browser, producing .csv files containing the spot's barcode, anatomical region, and condition (i.e., control versus mutant).
+
+Here, we will first read in all .csv files for each sample. Next, we need to append the corresponding sample number to each barcode in the "Barcode" column of the .csv files (i.e., control1 has "_1" appended to each barcode, control2 has "_2", mutant1 has "_3", and mutant2 has "_4"). These sample numbers were automatically included in our Seurat object when we initially created it, since we merged our four samples together. We need to make sure the barcodes in our .csv files match the naming notation of the barcodes in our Seurat object in order to subset our Seurat object. Finally, we will combine all of our processed .csv files into one single "regions of interest" data.frame, which we will use for subsetting in section 3.
+
+```{r}
+control1_lateral_cortex <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control1/lateral_cortex.csv")
+control1_medial_cortex <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control1/medial_cortex.csv")
+control1_mge <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control1/mge.csv")
+control1_lge <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control1/lge.csv")
+control1_midline <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control1/midline.csv")
+control1_meninges <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control1/meninges.csv")
+
+control2_lateral_cortex <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control2/lateral_cortex.csv")
+control2_medial_cortex <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control2/medial_cortex.csv")
+control2_mge <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control2/mge.csv")
+control2_lge <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control2/lge.csv")
+control2_midline <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control2/midline.csv")
+control2_meninges <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/control2/meninges.csv")
+
+mutant1_lateral_cortex <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant1/lateral_cortex.csv")
+mutant1_medial_cortex <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant1/medial_cortex.csv")
+mutant1_mge <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant1/mge.csv")
+mutant1_lge <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant1/lge.csv")
+mutant1_midline <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant1/midline.csv")
+mutant1_meninges <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant1/meninges.csv")
+
+mutant2_lateral_cortex <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant2/lateral_cortex.csv")
+mutant2_medial_cortex <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant2/medial_cortex.csv")
+mutant2_mge <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant2/mge.csv")
+mutant2_lge <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant2/lge.csv")
+mutant2_midline <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant2/midline.csv")
+mutant2_meninges <- read.csv("/Users/christinacomo/Desktop/Spatial/raw_data/regions_of_interest/mutant2/meninges.csv")
+
+```
+
+
+```{r}
+# merge data.frames into one roi (regions of interest) data.frame
+roi <- bind_rows(control1_medial_cortex,
+             control1_lateral_cortex,
+             control1_mge,
+             control1_lge,
+             control1_midline,
+             control1_meninges,
+             control2_medial_cortex,
+             control2_lateral_cortex,
+             control2_mge,
+             control2_lge,
+             control2_midline,
+             control2_meninges,
+             mutant1_medial_cortex,
+             mutant1_lateral_cortex,
+             mutant1_mge,
+             mutant1_lge,
+             mutant1_midline,
+             mutant1_meninges,
+             mutant2_medial_cortex,
+             mutant2_lateral_cortex,
+             mutant2_mge,
+             mutant2_lge,
+             mutant2_midline,
+             mutant2_meninges)
+```
+
+```{r}
+roi <- read_csv("/Users/christinacomo/Destop/Spatial/raw_data/merged_roi.csv")
+```
+
+# 3 Subset Data
+
+Now that we have a single "regions of interest" data.frame with appropriately named barcodes, we are ready to subset our Seurat object. To do this, we will grab the spot barcodes from our "regions of interest" data.frame and store them in a `spots.use` object; these are the spots that we want to keep in our subsetted Seurat object. Next, we will format our "regions of interest" data.frame so that we can use it with the `AddMetaData()` function; for each spot in our subsetted Seurat object, we will include what region the spot came from (stored as "region" in our meta.data), as well as if the spot corresponds to a control or mutant sample (stored as "condition" in our meta.data).
+
+```{r}
+# grab the spot barcodes to use for subsetting
+spots.use <- roi$Barcode
+# set barcodes as rownames to use the AddMetaData() function
+roi <- roi %>% `row.names <-` (., NULL) %>%  column_to_rownames(var = "Barcode")
+# subset the seurat object
+so_sub <- subsetdata(so, spots = spots.use)
+# add "region" as new meta.data field
+so_sub <- AddMetaData(so_sub, metadata = roi)
+```
+
+Confirm that we successfully subsetted our data based on regions of interest:
+
+```{r, fig.height = 3, fig.width = 3}
+FeaturePlot(so_sub, 
+               features = "nCount_RNA", 
+               palette = "Spectral",
+               pt.size = 1.0, 
+               ncol = 2, 
+               label.by = "sample_id",
+               show.sb = FALSE) +
+  theme(plot.title = element_text(hjust = 0.5, size = 18),
+        text = element_text(size = 16))
+```
+
+Success!
+
+# 4 Normalization
+
+Because we are working with a subset of our original Seurat object, we need to re-normalize it. Note that this is only the case for sctransform and the SCT assay. In the previous notebook, we also normalized our RNA assay using standard log-normalization; because this is done on a per-spot basis, we do **not** need to re-normalize the RNA assay. However, because sctransform scales the data, we **do** need to rerun sctransform to rescale our data.
+
+```{r}
+so_sub <- SCTransform(so_sub)
+```
+
+# 5 Cell Cycle Scoring
+
+In this section, we will assign a cell cycle phase (G1, S, G2M) to every spot. Remember that spots are not the same as single cells, and each spot covers 1-10 individual cells that might be in different phases of the cell cycle. Therefore, cell cycle scoring in ST data can let you know generally what cell cycle phase cells are in in any given cluster/region.
+
+The cell cycle score is stored under "Phase" in our meta.data. We could use this information to regress out effects of cell cycle in our data if appropriate, but I do not think it is necessary in this case.
+
+```{r}
+s.genes <- convertHumanGeneList(cc.genes.updated.2019$s.genes)$MGI.symbol
+g2m.genes <- convertHumanGeneList(cc.genes.updated.2019$g2m.genes)$MGI.symbol
+so_sub <- CellCycleScoring(object = so_sub,
+                           s.features = s.genes,
+                           g2m.features = g2m.genes)
+```
+
+# 6 Data Visualization
+
+Next we will visualize our subsetted data. This entails clustering our data, and looking at the clusters 1) overlaid onto our sections and 2) in two dimensional space (via a UMAP dimensional reduction).
+
+## 6.1 Clustering
+
+```{r}
+so_sub <- RunPCA(so_sub, assay = "SCT", verbose = FALSE)
+so_sub <- FindNeighbors(so_sub, reduction = "pca", dims = 1:50, verbose = FALSE)
+so_sub <- FindClusters(so_sub, verbose = FALSE)
+```
+
+Plot all clusters together spatially for each sample.
+
+```{r, fig.height = 3, fig.width = 3}
+ST.FeaturePlot(object = so_sub, 
+               features = "seurat_clusters", 
+               cols = custom_colors$discrete, 
+               pt.size = 1, 
+               ncol = 2,
+               show.sb = FALSE,
+               label.by = "sample_id")
+```
+
+## 6.2 Dimensional reduction
+
+### 6.2.1 Calculate the UMAP
+
+```{r}
+so_sub <- RunUMAP(so_sub, reduction = "pca", dims = 1:50)
+```
+
+### 6.2.2 Plot the UMAP
+
+```{r}
+plot_umap_by_cluster <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = seurat_clusters)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  scale_color_manual(values = custom_colors$discrete) +
+  labs(color = 'Cluster') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'left') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_sample <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = sample_id)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  scale_color_manual(values = custom_colors$discrete) +
+  labs(color = 'Sample') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'right') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_condition <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = condition)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  scale_color_manual(values = custom_colors$discrete) +
+  labs(color = 'Condition') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'left') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_region <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = region)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  scale_color_manual(values = custom_colors$discrete) +
+  labs(color = 'Region') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'right') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+ggsave(
+  "results/plots/umap_sub.png",
+  plot_umap_by_cluster + plot_umap_by_sample +
+  plot_umap_by_condition + plot_umap_by_region +
+  plot_layout(ncol = 2),
+  height = 6,
+  width = 8.5
+)
+```
+
+```{r, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("results/plots/umap_sub.png")
+```
+
+Note here that, unlike our data using all spots from the entire head, our subsetted data has discrete clusters belonging to either the control samples or to the mutant samples.
+
+### 6.2.3 Additional UMAP plots
+
+#### 6.2.3.1 Split by sample
+
+To understand how much the samples overlap, we will also plot the UMAP split by sample.
+
+```{r}
+temp_labels <- so_sub@meta.data %>%
+  group_by(sample_id) %>%
+  tally()
+plot_umap_by_sample_split <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = sample_id)) +
+  geom_point(size = 0.2, show.legend = FALSE) +
+  geom_text(
+    data = temp_labels,
+    aes(x = Inf, y = -Inf, label = paste0('n = ', format(n, big.mark = ',', trim = TRUE)), vjust = -1.5, hjust = 1.25),
+    color = 'black', size = 2.8
+  ) +
+  theme_bw() +
+  scale_color_manual(values = custom_colors$discrete) +
+  coord_fixed() +
+  theme(
+    legend.position = 'none',
+    strip.text = element_text(face = 'bold', size = 10)
+  ) +
+  facet_wrap(~sample_id, ncol = 5)
+ggsave(
+  "results/plots/umap_by_sample_split_sub.png",
+  plot_umap_by_sample_split,
+  height = 4,
+  width = 10
+)
+```
+
+```{r, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("results/plots/umap_by_sample_split_sub.png")
+```
+
+#### 6.2.3.2 Split by condition
+
+```{r}
+temp_labels <- so_sub@meta.data %>%
+  group_by(condition) %>%
+  tally()
+plot_umap_by_condition <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = condition)) +
+  geom_point(size = 0.2, show.legend = FALSE) +
+  geom_text(
+    data = temp_labels,
+    aes(x = Inf, y = -Inf, label = paste0('n = ', format(n, big.mark = ',', trim = TRUE)), vjust = -1.5, hjust = 1.25),
+    color = 'black', size = 2.8
+  ) +
+  theme_bw() +
+  scale_color_manual(values = custom_colors$discrete) +
+  coord_fixed() +
+  theme(
+    legend.position = 'none',
+    strip.text = element_text(face = 'bold', size = 10)
+  ) +
+  facet_wrap(~condition, ncol = 5)
+ggsave(
+  "results/plots/umap_by_condition_split_sub.png",
+  plot_umap_by_condition,
+  height = 4,
+  width = 10
+)
+```
+
+```{r, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("results/plots/umap_by_condition_split_sub.png")
+```
+
+#### 6.2.3.3 Including cell cycle phase
+
+```{r}
+plot_umap_by_phase <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = Phase)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  scale_color_manual(values = custom_colors$discrete) +
+  labs(color = 'CC Phase') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'right') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+ggsave(
+  "results/plots/umap_sub_with_cell_cycle.png",
+  plot_umap_by_cluster + plot_umap_by_sample +
+  plot_umap_by_condition + plot_umap_by_phase +
+  plot_layout(ncol = 2),
+  height = 6,
+  width = 8.5
+)
+```
+
+```{r, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("results/plots/umap_sub_with_cell_cycle.png")
+```
+
+# 7 Integration
+
+Let's look at our UMAP plot split by condition again.
+
+```{r, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("results/plots/umap_by_condition_split_sub.png")
+```
+
+Do we need to integrate our data? Initially you might think yes, but the answer is probably not (\*). Because we are looking at such a small region of our overall samples, and because we know that we have a large and obvious phenotype in the developing neocortex of the *Foxc1-KO* mutants compared to wild-type controls, we might actually expect to see our data segregate this way. If our control spots and our mutant spots don't co-cluster, then they differ in gene expression. This could be due to biology (which is interesting) or to a batch effect (which is bad) - or both. As an internal control, we do see that for most cell types in our samples (including the non-brain clusters from the rest of the head), the control and mutant samples do co-cluster:
+
+```{r, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("results/plots/umap_by_sample_split.png")
+```
+
+This would suggest that the few clusters in our subsetted data that are control- or mutant-specific are driven by biological differences rather than technical. Therefore, moving forward with the analysis, a good approach would be to treat our subsetted data like bulk RNA-seq data, and see what is different between the control and mutant clusters.
+
+(\*) In general, there is a danger of over-correcting the data, which would negatively impact differential expression (e.g. by pulling all the data into the same clusters you might unintentionally start comparing unrelated cell populations from the control samples and the mutant samples). Analyzing the known biology from the control samples (i.e., looking at marker genes of known cell populations) might help guide the best approach, and inform us as to whether or not integration is necessary. For integrating data, there are no clear guidelines and no hard and fast rules.
+
+# 8 Marker Genes
+
+We can still calculate our top 10 marker genes per cluster to help give us an idea of what cell types are represented in the control and mutant samples.
+
+Find marker genes that define each cluster.
+
+```{r}
+so_sub.markers <- FindAllMarkers(so_sub, 
+                                 assay = "RNA",
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+```
+
+Find the top 10 genes in so.markers for each cluster sorted by avg_log2FC.
+
+```{r}
+so_sub.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC)
+```
+
+```{r}
+write.csv(so_sub.markers, "results/tables/marker_genes_sub.csv")
+```
+
+# 9 Annotate Clusters
+
+Based on marker expression, we can rename our clusters as follows:
+
+```{r}
+so_sub <- RenameIdents(so_sub,
+                       "0" = "Immature Neurons 1",
+                       "1" = "Interneurons",
+                       "2" = "APs and IPs",
+                       "3" = "Immature Neurons 2",
+                       "4" = "Migrating Neurons",
+                       "5" = "Mature Neurons")
+so_sub$cell_type <- Idents(so_sub)
+```
+
+Plot our data in UMAP space with new cluster labels:
+
+```{r}
+plot_umap_by_cluster <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = cell_type)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  scale_color_manual(values = custom_colors$discrete) +
+  labs(color = 'Cell Type') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'left') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_sample <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = sample_id)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  scale_color_manual(values = custom_colors$discrete) +
+  labs(color = 'Sample') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'right') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_condition <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = condition)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  scale_color_manual(values = custom_colors$discrete) +
+  labs(color = 'Condition') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'left') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_region <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = region)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  scale_color_manual(values = custom_colors$discrete) +
+  labs(color = 'Region') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'right') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+ggsave(
+  "results/plots/umap_sub_labeled_clusters.png",
+  plot_umap_by_cluster + plot_umap_by_sample +
+  plot_umap_by_condition + plot_umap_by_region +
+  plot_layout(ncol = 2),
+  height = 6,
+  width = 8.5
+)
+```
+
+```{r, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("results/plots/umap_sub_labeled_clusters.png")
+```
+
+# 10 Save Data
+
+```{r}
+saveRDS(so_sub, "results/objects/so_sub.rds")
+```
+
+# 11 Session Info
+
+```{r}
+sessionInfo()
+```

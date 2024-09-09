@@ -1,0 +1,228 @@
+---
+title: "Merge E14 Spatial and scRNAseq Data"
+author: "Christina Como"
+date: "`r Sys.Date()`"
+output: 
+  html_notebook:
+    toc: TRUE
+    toc_depth: 4
+    toc_float: TRUE
+    theme: united
+    highlight: tango
+---
+
+## 1.1 Load R packages
+```{r}
+library(ggplot2)
+library(ggsci)
+library(hdf5r)
+library(patchwork)
+library(RColorBrewer)
+library(Seurat)
+library(SeuratData)
+library(dplyr)
+```
+
+# 2 Load Data
+Followed this vignette to merge spatial and scRNAseq data : https://satijalab.org/seurat/articles/integration_introduction.html
+```{r}
+sc_ctrolKO <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/E14meninges.RDS")
+so_sub <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/so_sub.RDS")
+```
+
+# 3 Visualize data
+## 3.1 scRNAseq E14 meninges
+```{r}
+DimPlot(sc_ctrolKO, split.by = 'orig.ident')
+```
+## 3.2 Spatial object E14 
+```{r}
+DimPlot(so_sub, split.by = "condition")
+```
+# 4 Split and reintegrate control and mutant samples
+
+## 4.1 Controls 
+```{r}
+E14.control.meninges <- subset(sc_ctrolKO, subset = orig.ident == "Foxcl_ctl")
+```
+
+```{r}
+DimPlot(E14.control.meninges)
+```
+
+```{r}
+E14.control.meninges <- FindVariableFeatures(E14.control.meninges, selection.method = "vst", nfeatures = 2000)
+E14.control.meninges <- ScaleData(E14.control.meninges, verbose = F)
+E14.control.meninges <- RunPCA(E14.control.meninges, npcs = 40, verbose = F)
+E14.control.meninges <- FindNeighbors(E14.control.meninges, reduction = "pca", dims = 1:30)
+E14.control.meninges <- FindClusters(E14.control.meninges, resolution = 0.2, algorithm = 1)
+E14.control.meninges <- RunUMAP(E14.control.meninges, reduction = "pca", dims = 1:40)
+DimPlot(E14.control.meninges, reduction = "umap", label = TRUE, pt.size = 0.2)
+```
+```{r}
+#pia is cluster 0, 1 is arachnoid, 2 is dura 
+p1 <- VlnPlot(E14.control.meninges, "S100a6", split.by = 'orig.ident')
+p2 <- VlnPlot(E14.control.meninges, "Crabp2") 
+p3 <- VlnPlot(E14.control.meninges, "Rdh10") 
+p1 + p2 + p3
+```
+```{r}
+saveRDS(E14.control.meninges, "/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/E14.control.meninges.RDS")
+```
+
+## 4.2 Mutants 
+```{r}
+E14.mutant.meninges <- subset(sc_ctrolKO, subset = orig.ident == "Foxcl_mut")
+```
+
+```{r}
+DimPlot(E14.mutant.meninges)
+```
+
+```{r}
+E14.mutant.meninges <- FindVariableFeatures(E14.mutant.meninges, selection.method = "vst", nfeatures = 2000)
+E14.mutant.meninges <- ScaleData(E14.mutant.meninges, verbose = F)
+E14.mutant.meninges <- RunPCA(E14.mutant.meninges, npcs = 40, verbose = F)
+E14.mutant.meninges <- FindNeighbors(E14.mutant.meninges, reduction = "pca", dims = 1:30)
+E14.mutant.meninges <- FindClusters(E14.mutant.meninges, resolution = 0.2, algorithm = 1)
+E14.mutant.meninges <- RunUMAP(E14.mutant.meninges, reduction = "pca", dims = 1:40)
+DimPlot(E14.mutant.meninges, reduction = "umap", label = TRUE, pt.size = 0.2)
+```
+
+```{r}
+#pia is cluster 0, 1 is arachnoid/dura 
+p1 <- VlnPlot(E14.mutant.meninges, "S100a6")
+p2 <- VlnPlot(E14.mutant.meninges, "Crabp2") 
+p3 <- VlnPlot(E14.mutant.meninges, "Rdh10") 
+p1 + p2 + p3
+```
+```{r}
+saveRDS(E14.mutant.meninges, "/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/E14.mutant.meninges.RDS")
+```
+
+
+# 4 Split and reintegrate control and mutant spatial objects 
+
+## 4.1 Controls 
+```{r}
+E14.control.spatial <- subset(so_sub, subset = condition == "control")
+```
+
+```{r}
+DimPlot(E14.control.spatial)
+```
+
+
+```{r}
+E14.control.spatial <- FindVariableFeatures(E14.control.spatial, selection.method = "vst", nfeatures = 2000)
+E14.control.spatial <- ScaleData(E14.control.spatial, verbose = F)
+E14.control.spatial <- RunPCA(E14.control.spatial, npcs = 40, verbose = F)
+E14.control.spatial <- FindNeighbors(E14.control.spatial, reduction = "pca", dims = 1:30)
+E14.control.spatial <- FindClusters(E14.control.spatial, resolution = 0.8, algorithm = 1)
+E14.control.spatial <- RunUMAP(E14.control.spatial, reduction = "pca", dims = 1:40)
+DimPlot(E14.control.spatial, reduction = "umap", label = TRUE, pt.size = 0.2)
+```
+```{r}
+# AP/IPs is 1, 0 is immature neurons , 2 is migrating neurons 
+p1 <- VlnPlot(E14.control.spatial, "Eomes")
+p2 <- VlnPlot(E14.control.spatial, "Neurod2") 
+p3 <- VlnPlot(E14.control.spatial, "Neurod6") 
+p1 + p2 + p3
+```
+```{r}
+saveRDS(E14.control.spatial, "/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/E14.control.spatial.RDS")
+```
+
+
+## 4.2 Mutants 
+```{r}
+E14.mutant.spatial <- subset(so_sub, subset = condition == "mutant")
+```
+
+```{r}
+DimPlot(E14.mutant.spatial)
+```
+```{r}
+E14.mutant.spatial <- FindVariableFeatures(E14.mutant.spatial, selection.method = "vst", nfeatures = 2000)
+E14.mutant.spatial <- ScaleData(E14.mutant.spatial, verbose = F)
+E14.mutant.spatial <- RunPCA(E14.mutant.spatial, npcs = 40, verbose = F)
+E14.mutant.spatial <- FindNeighbors(E14.mutant.spatial, reduction = "pca", dims = 1:30)
+E14.mutant.spatial <- FindClusters(E14.mutant.spatial, resolution = 0.2, algorithm = 1)
+E14.mutant.spatial <- RunUMAP(E14.mutant.spatial, reduction = "pca", dims = 1:40)
+DimPlot(E14.mutant.spatial, reduction = "umap", label = TRUE, pt.size = 0.2)
+```
+```{r}
+# AP/IPs is 0, 0 is MGE progenitors, 2 is migrating neurons 
+progenitor.markers <- c("Hes5", "Eomes", "Sox2", "Pax6")
+p1 <- VlnPlot(E14.mutant.spatial, progenitor.markers)
+p2 <- VlnPlot(E14.mutant.spatial, "Neurod2") 
+p3 <- VlnPlot(E14.mutant.spatial, "Neurod1") 
+p4 <- VlnPlot(E14.mutant.spatial, "Neurod6") 
+p1 + p2 + p3 + p4
+```
+
+```{r}
+FindMarkers(E14.mutant.spatial, "1")
+```
+```{r}
+saveRDS(E14.mutant.spatial, "/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/E14.mutant.spatial.RDS")
+```
+
+
+# 5 Integrate Controls 
+```{r}
+E14.control.meninges <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/E14.control.meninges.RDS")
+E14.control.spatial <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/E14.control.spatial.RDS")
+```
+
+Followed this vignette to merge spatial and scRNAseq data : https://satijalab.org/seurat/articles/integration_introduction.html
+```{r}
+my.anchors <- FindIntegrationAnchors(object.list = c(E14.control.meninges,E14.control.spatial), dims = 1:30)
+```
+
+
+```{r}
+# this command creates an 'integrated' data assay
+combined.control <- IntegrateData(anchorset = my.anchors)
+```
+
+```{r}
+# specify that we will perform downstream analysis on the corrected data note that the
+# original unmodified data still resides in the 'RNA' assay
+DefaultAssay(combined.control) <- "integrated"
+```
+
+```{r}
+combined.control <- FindVariableFeatures(combined.control, selection.method = "vst", nfeatures = 2000)
+combined.control <- ScaleData(combined.control, verbose = F)
+combined.control <- RunPCA(combined.control, npcs = 40, verbose = F)
+combined.control <- FindNeighbors(combined.control, reduction = "pca", dims = 1:30)
+combined.control <- FindClusters(combined.control, resolution = 0.1, algorithm = 1)
+combined.control <- RunUMAP(combined.control, reduction = "pca", dims = 1:40)
+DimPlot(combined.control, reduction = "umap", label = TRUE, pt.size = 0.2)
+```
+
+```{r}
+p1 <- DimPlot(combined.control, reduction = "umap", split.by = "orig.ident")
+p2 <- DimPlot(combined.control, reduction = "umap", label = TRUE, repel = TRUE)
+p1 + p2
+```
+```{r, fig.width=10}
+Idents(combined.control) <- "seurat_clusters"
+combined.control <- FindSubCluster(combined.control, cluster = "0", graph.name = "integrated_snn",
+                         subcluster.name = "spatial.subcluster", resolution = 0.4, algorithm = 1)
+DimPlot(combined.control, group.by = "spatial.subcluster", cells = WhichCells(combined.control, idents = c("0"))) + scale_color_igv()
+```
+```{r}
+Idents(combined.control) <- "seurat_clusters"
+combined.control$subcluster <- combined.control$spatial.subcluster
+combined.control$subcluster[combined.control$seurat_clusters == "spatial cells"] <- combined.control$spatial.subcluster[combined.control$seurat_clusters == "suture cells"]
+
+DimPlot(combined.control, group.by = "subcluster", cells = WhichCells(combined.control, idents = c("0"))) + scale_color_igv()
+```
+
+
+
+
+
+

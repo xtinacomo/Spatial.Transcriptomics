@@ -1,0 +1,748 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+```{r, setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data')
+getwd()
+```
+
+```{r}
+so <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/so_all.rds")
+```
+
+```{r}
+DimPlot(so)
+ST.DimPlot(so)
+```
+
+
+```{r}
+custom_colors <- list()
+colorBlindGrey8   <- c("#E69F00", "#56B4E9", "#009E73", 
+                        "#0072B2", "#D55E00", "#CC79A7")
+custom_colors$discrete <- c(colorBlindGrey8)
+scales::show_col(colorBlindGrey8)
+```
+## 1.1 Load R packages
+
+```{r}
+library(ggplot2)
+library(ggsci)
+library(hdf5r)
+library(patchwork)
+library(RColorBrewer)
+library(Seurat)
+library(STutility)
+library(tidyverse)
+library(biomaRt)
+library(ggplot2)
+```
+
+```{r}
+install.packages('BiocManager')
+BiocManager::install('multtest')
+install.packages('metap')
+library(multtest)
+library(metap)
+install.packages('ggpubr')
+library(ggpubr)
+devtools::install_github(
+    "jbergenstrahle/STUtility"
+)
+```
+
+
+
+
+```{r}
+control1_lateral_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control1/regions_of_interest/lateral_cortex.csv")
+control1_medial_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control1/regions_of_interest/medial_cortex.csv")
+control1_mge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control1/regions_of_interest/mge.csv")
+control1_lge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control1/regions_of_interest/lge.csv")
+control1_midline <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control1/regions_of_interest/midline.csv")
+
+control2_lateral_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/lateral_cortex.csv")
+control2_medial_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/medial_cortex.csv")
+control2_mge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/mge.csv")
+control2_lge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/lge.csv")
+control2_midline <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/midline.csv")
+
+mutant1_lateral_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant1/regions_of_interest/lateral_cortex.csv")
+mutant1_medial_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant1/regions_of_interest/medial_cortex.csv")
+mutant1_mge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant1/regions_of_interest/mge.csv")
+mutant1_lge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant1/regions_of_interest/lge.csv")
+mutant1_midline <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant1/regions_of_interest/midline.csv")
+
+mutant2_lateral_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant2/regions_of_interest/lateral_cortex.csv")
+mutant2_medial_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant2/regions_of_interest/medial_cortex.csv")
+mutant2_mge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant2/regions_of_interest/mge.csv")
+mutant2_lge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant2/regions_of_interest/lge.csv")
+mutant2_midline <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant2/regions_of_interest/midline.csv")
+```
+
+
+```{r}
+# merge data.frames into one roi (regions of interest) data.frame
+roi <- rbind(control1_medial_cortex,
+             control1_lateral_cortex,
+             control1_mge,
+             control1_lge,
+             control1_midline,
+             control2_medial_cortex,
+             control2_lateral_cortex,
+             control2_mge,
+             control2_lge,
+             control2_midline,
+             mutant1_medial_cortex,
+             mutant1_lateral_cortex,
+             mutant1_mge,
+             mutant1_lge,
+             mutant1_midline,
+             mutant2_medial_cortex,
+             mutant2_lateral_cortex,
+             mutant2_mge,
+             mutant2_lge,
+             mutant2_midline)
+```
+
+# 3 Subset Data
+
+Now that we have a single "regions of interest" data.frame with appropriately named barcodes, we are ready to subset our Seurat object. First, we need to make sure that we do not have duplicated spot barcodes in our roi data.frame. If we do, that means a spot was assigned to multiple regions (in our case, some spots assigned to the cortex were also assigned to the meninges). We need to pick which region to assign the spots to. Here, we will look for duplicated barcodes and assign them to the cortex (i.e., remove the meninges entry) as default.
+
+```{r}
+# find duplicated barcodes
+dups <- roi$Barcode[duplicated(roi$Barcode)]
+# get row index of duplicated barcodes corresponding to meninges
+idx <- c()
+for (dup in dups) {
+  idx <- c(idx, which(roi$Barcode == dup)[2]) # change to [1] to keep assignment as meninges
+}
+# remove duplicated entries
+if (length(idx) > 0) {
+  roi <- roi[-c(idx), ]
+}
+```
+
+Now that we have a clean data.frame, we will subset our Seurat object. To do this, we will grab the spot barcodes from our "regions of interest" data.frame and store them in a `spots.use` object; these are the spots that we want to keep in our subsetted Seurat object. Next, we will format our "regions of interest" data.frame so that we can use it with the `AddMetaData()` function; for each spot in our subsetted Seurat object, we will include what region the spot came from (stored as "region" in our meta.data), as well as if the spot corresponds to a control or mutant sample (stored as "condition" in our meta.data).
+
+```{r}
+# grab the spot barcodes to use for subsetting
+spots.use <- roi$Barcode
+# set barcodes as rownames to use the AddMetaData() function
+roi <- roi %>% `row.names<-` (., NULL) %>%  column_to_rownames(var = "Barcode")
+# subset the seurat object
+so_sub <- SubsetSTData(so, spots = spots.use)
+# add "region" as new meta.data field
+so_sub <- AddMetaData(so_sub, metadata = roi)
+```
+
+```{r}
+so_sub <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/so_all.rds")
+```
+
+
+```{r, fig.height = 3, fig.width = 3}
+library(Seurat)
+library(STutility)
+FeatureOverlay(so_sub,
+               features = "roi",
+               sampleids = 1:4,
+               pt.size = 1.0,
+               ncols = 2,
+               type = "processed",
+               show.sb = FALSE,
+               label.by = "sample_id")
+```
+
+# 4 Normalization
+
+Because we are working with a subset of our original Seurat object, we need to re-normalize it. Note that this is only the case for sctransform and the SCT assay. In the previous notebook, we also normalized our RNA assay using standard log-normalization; because this is done on a per-spot basis, we do **not** need to re-normalize the RNA assay. However, because sctransform scales the data, we **do** need to rerun sctransform to rescale our data.
+
+```{r}
+so_sub <- SCTransform(so)
+```
+
+## 6.1 Clustering
+
+```{r}
+so_sub <- RunPCA(so_sub, assay = "SCT", verbose = FALSE)
+so_sub <- FindNeighbors(so_sub, reduction = "pca", dims = 1:50, verbose = FALSE)
+so_sub <- FindClusters(so_sub, verbose = FALSE)
+```
+
+```{r, fig.height = 3, fig.width = 3}
+FeaturePlot(object = so_sub, 
+               features = "region", 
+               pt.size = 1, 
+               ncol = 2,
+               show.sb = FALSE,
+               label.by = "sample_id")
+```
+
+### 6.2.1 Calculate the UMAP
+
+```{r}
+so_sub <- RunUMAP(so_sub, reduction = "pca", dims = 1:50)
+```
+
+### 6.2.2 Plot the UMAP
+
+```{r}
+plot_umap_by_cluster <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = seurat_clusters)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  labs(color = 'Cluster') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'left') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_sample <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = sample_id)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  labs(color = 'Sample') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'right') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_condition <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = condition)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  labs(color = 'Condition') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'left') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_region <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = region)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  labs(color = 'Region') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'right') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+```
+
+```{r}
+plot_umap_by_cluster + plot_umap_by_sample
+```
+
+```{r}
+so_sub.markers <- FindAllMarkers(so_sub, 
+                                 assay = "RNA",
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+```
+
+```{r}
+so_sub.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC)
+```
+
+```{r}
+DimPlot(so_sub)
+```
+
+```{r}
+FeaturePlot(so_sub, "Hes5")
+SpatialDimPlot(so_sub)
+```
+
+```{r}
+FeaturePlot(so_sub, "Eomes")
+```
+
+#0 is progenitors, #1 cycling, #2 is interneurons, #3 mature neurons, #4 is meninges, #5 immature neurons, #6 is RBCs
+
+```{r}
+so_sub <- RenameIdents(so_sub,
+                       "0" = "APs and IPs",
+                       "1" = "Cycling Cells",
+                       "2" = "Interneuron Progenitors",
+                       "3" = "Mature Neurons",
+                       "4" = "Meninges",
+                       "5" = "Immature Neurons",
+                       "6" = "RBCs")
+so_sub$cell_type <- Idents(so_sub)
+```
+
+
+```{r}
+plot_umap_by_cluster <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = cell_type)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  labs(color = 'Cell Type') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'left') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_sample <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = sample_id)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  labs(color = 'Sample') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'right') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_condition <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = condition)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  labs(color = 'Condition') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'left') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+plot_umap_by_region <- bind_cols(so_sub@meta.data, as.data.frame(so_sub@reductions$umap@cell.embeddings)) %>%
+  ggplot(aes(UMAP_1, UMAP_2, color = region)) +
+  geom_point(size = 0.2) +
+  theme_bw() +
+  labs(color = 'Region') +
+  guides(colour = guide_legend(override.aes = list(size = 2))) +
+  theme(legend.position = 'right') +
+  coord_fixed() +
+  annotate(
+    geom = 'text', x = Inf, y = -Inf,
+    label = paste0('n = ', format(nrow(so_sub@meta.data), big.mark = ',', trim = TRUE)),
+    vjust = -1.5, hjust = 1.25, color = 'black', size = 2.5
+  )
+```
+
+```{r}
+plot_umap_by_cluster + plot_umap_by_condition + plot_umap_by_sample + plot_umap_by_region
+```
+
+```{r, fig.height = 3, fig.width = 3}
+FeatureOverlay(so_sub,
+               features = "cell_type",
+               sampleids = 1:4,
+               pt.size = 1.0,
+               ncols = 2,
+               type = "processed",
+               show.sb = FALSE)
+```
+
+```{r}
+so_sub_final <- subset(so_sub, idents = c("Cyclin Cells", "APs and IPs", "Interneuron Progenitors", "Mature Neurons", "Immature Neurons"))
+```
+
+```{r}
+so_sub_final <- RunPCA(so_sub_final, assay = "SCT", verbose = FALSE)
+so_sub_final <- FindNeighbors(so_sub_final, reduction = "pca", dims = 1:50, verbose = FALSE)
+so_sub_final <- FindClusters(so_sub_final, verbose = FALSE)
+```
+
+```{r}
+DimPlot(so_sub_final, split.by = 'condition', cols = colorBlindGrey8, pt.size = 0.5)
+```
+
+
+```{r}
+so_sub_no_meninges <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/so_sub_no_meninges.rds")
+```
+
+```{r}
+DotPlot(so_sub_no_meninges, features = c("Dll1", "Notch1", "Notch2"), split.by = 'condition')
+```
+
+
+```{r}
+FeatureOverlay(so_sub_no_meninges,
+               features = "SCT_snn_res.0.8",
+               sampleids = 1:4,
+               pt.size = 1.0,
+               ncols = 2,
+               type = "processed",
+               show.sb = FALSE)
+```
+
+```{r}
+library(Seurat)
+so_sub_final <- SCTransform(so_sub_final, assay = "SCT", verbose = FALSE)
+so_sub_final <- RunPCA(so_sub_final, assay = "SCT", verbose = FALSE)
+so_sub_final <- FindNeighbors(so_sub_final, reduction = "pca", dims = 1:30)
+so_sub_final <- FindClusters(so_sub_final, verbose = FALSE, resolution = 0.6, algorithm = 1)
+so_sub_final <- RunUMAP(so_sub_final, reduction = "pca", dims = 1:30)
+```
+
+```{r}
+DimPlot(so_sub_final)
+```
+
+```{r}
+# 2 is progenitors, 1 is interneuron progenitors, 3 is mature neurons, 0 is immature neurons
+progenitor_markers <- c('Pax6', 'Dlx2', 'Malat1', 'Cntn2', 'Tcf4', 'Eomes', 'Sox2', 'Lars2', 'Neurod1', 'Neurod6')
+```
+
+```{r, fig.width= 8, fig.height= 4}
+FeaturePlot(so_sub_final, progenitor_markers, pt.size = 0.6, ncol = 5)
+t1 <- FindMarkers(so_sub_final, "Mature Neurons")
+```
+
+```{r}
+so_sub_final <- RenameIdents(so_sub_final, "0" = "Immature Neurons","1" = "Interneuron Progenitors","2" = "AP and IPs","3" = "Migratory Neurons", "4" = "Mature Neurons")
+
+so_sub_final$cell_type_final <- Idents(so_sub_final)
+levels(so_sub_final)
+```
+
+```{r}
+SpatialDimPlot(so_sub_final, split.by = 'condition')
+saveRDS(so_sub_final, "/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/so_sub_final.RDS")
+so_sub_final<- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/so_sub_final.RDS")
+```
+
+```{r}
+library(Seurat)
+library(STu)
+FeatureOverlay(so_sub_final,
+               features = "cell_type_final",
+               sampleids = 1:4,
+               pt.size = 1.0,
+               ncols = 2,
+               type = "processed",
+               show.sb = FALSE)
+```
+
+```{r}
+ST.FeaturePlot(object = so_sub_final, 
+               features = "cell_type_final",
+               cols = colorBlindGrey8,
+               pt.size = 2, 
+               ncol = 2,
+               show.sb = FALSE)
+```
+
+```{r}
+library(data.table)
+library(magrittr)
+## extract meta data
+md <- so_sub_final@meta.data %>% as.data.table
+# the resulting md object has one "row" per cell
+```
+
+```{r}
+## count the number of cells per unique combinations of "Sample" and "seurat_clusters"
+md[, .N, by = c("sample_id", "cell_type_final")]
+```
+```{r}
+library(Seurat)
+DimPlot(so_sub_final, split.by = 'condition')
+```
+
+```{r}
+saveRDS('so_sub_final.rds')
+```
+
+```{r}
+levels(so_sub_final)
+levels(x = so_sub_final) <- c("AP and IPs", "Interneuron Progenitors", "Immature Neurons", "Migratory Neurons", "Mature Neurons")
+```
+
+
+
+```{r}
+#sox9, nes, sox3m Hbb-y, Tnc, Cntn2, Hba-x, ccnd1, Bhlhe22", "Cabp1", "Cntn2", Max, Hes1 Id4 (NSC), Neurog2 Neurod6 
+VlnPlot(so_sub_final, features= "Hbb-bh1", split.by = 'cell_type.condition')
+DotPlot(so_sub_final, features = 'Slc17a7', split.by = 'condition')
+```
+
+```{r, fig.wid = 10, fig.height= 10}
+#sox9, nes, sox3m Hbb-y, Tnc, Cntn2, Hba-x, ccnd1, Bhlhe22", "Cabp1", "Cntn2", Max, Hes1 Id4 (NSC), Neurog2 Neurod6 
+markers <- c("Sox9", "Nes", "Sox3", "Hbb-y", "Tnc", "Cntn2", "Hba-x", "Ccnd1", "Bhlhe22", "Cabp1", "Max", "Hes1", "Id4", "Neurog2", "Neurod6")
+VlnPlot(so_sub_final, markers, split.by = 'condition') + stat_compare_means(comparisons = so_sub_final$cell_type.condition, label = "p.signif")
+```
+
+```{r, fig.wid = 10, fig.height= 10}
+DotPlot(
+  so_sub_final,
+  assay = NULL,
+  feature = markers,
+  split.by = 'condition'
+)
+```
+
+```{r}
+DefaultAssay(so_sub_final) <- "RNA"
+DimPlot(so_sub_final, split.by = 'condition')
+so_sub_final$cell_type.condition <- paste(Idents(so_sub_final), so_sub_final$condition, sep = "_")
+Idents(so_sub_final) <- "cell_type.condition"
+levels(so_sub_final)
+```
+
+```{r}
+mark <- FindMarkers(so_sub_final, ident.1 = "APs and IPs_control", ident.2 = "APs and IPs_mutant")
+write.csv(mark, "mark.csv")
+getwd()
+```
+
+
+
+```{r}
+DefaultAssay(so_sub_final) <- "RNA"
+so_sub_final$cell_type.condition <- paste(Idents(so_sub_final), so_sub_final$condition, sep = "_")
+Idents(so_sub_final) <- "cell_type.condition"
+levels(so_sub_final)
+```
+
+```{r}
+mark3 <- FindMarkers(so_sub_final, ident.1 = "Interneurons_mutant", ident.2 = "Interneurons_control")
+write.csv(mark3, "mark3.csv")
+getwd()
+```
+
+
+```{r}
+mark.cond <- c("Tcf4", "Neurod6", "Sox1ot", "Hes5", "Sox11", "Sox1", "Hbb-y", "Aldoc")
+Idents(so_sub_final) <- "condition"
+levels(so_sub_final)
+```
+
+```{r, fig.wid = 10, fig.height= 15}
+library(Seurat)
+VlnPlot(so_sub_final, mark.cond, ncol = 4) + stat_compare_means(comparisons = so_sub_final$condition, label = "p.signif")
+```
+```{r}
+Idents(so_sub_final) <- "cell_type"
+levels(so_sub_final)
+compare <- FindMarkers(so_sub_final, ident.1 = "APs and IPs_mutant", ident.2 = "APs and IPs_control")
+write.csv(compare, "compare.csv")
+getwd()
+
+```
+
+```{r}
+DotPlot(so_sub_final, features = "Hbb-y", split.by = 'condition')
+VlnPlot(so_sub_final, features = "Hbb-y", split.by = 'condition')
+```
+
+```{r}
+neurogenesis_markers <- c("Bhlhe22", "Cntn2", "Neurog2")
+expansion_markers <- c("Nr2f1", "Hbb-y", "E2f1")
+```
+
+```{r, fig.width=10}
+p1 <- DotPlot(so_sub_final, features = neurogenesis_markers, split.by = 'condition')
+p2 <- DotPlot(so_sub_final, features = expansion_markers, split.by = 'condition')
+p1 + p2
+```
+
+
+```{r, fig.width=8, fig.height=3}
+p1 <- VlnPlot(so_sub_final, neurogenesis_markers, split.by = 'condition')
+p2 <- VlnPlot(so_sub_final, expansion_markers, split.by = 'condition')
+p2
+```
+
+```{r}
+markers <- FindAllMarkers(so_sub_final)
+write.csv(markers, "markers.csv")
+```
+
+```{r}
+library(Seurat)
+DimPlot(so_sub_final)
+```
+```{r}
+VlnPlot(so_sub_final, 'Notch1', split.by = 'condition')
+ReorderIdent(so_sub_final, var = c('AP and IPs', 'Interneuron Progenitors', 'Immature Neurons', 'Migratory Neurons', 'Mature Neurons'))
+DimPlot(so_sub_final)
+```
+
+```{r, fig.width=5, fig.height=2}
+Idents(so_sub_final) <- "cell_type_final"
+ReorderIdent(so_sub_final, var = c('APs and IPs_control', 'APs and IPs_mutant', 'Interneuron Progenitors_control', 'Interneuron Progenitors_mutant', 'Immature Neurons_control', 'Migratory Neurons_control', 'Migratory Neurons_mutant', 'Mature Neurons_control', 'Mature Neurons_mutant'))
+DotPlot(so_sub_final, feature = c('Dll1', 'Notch1', 'Notch2'), dot.scale = 10, cols = c('lightgrey', 'blue'), cluster.idents = F, split.by='condition')
+so_sub_final$cell_type.condition
+```
+
+```{r}
+library(Seurat)
+#Socs3, Msi2, Crbp2, Crabp2, Gck,DEDD,  
+VlnPlot(so_sub_final, feature ="Nr2f1", split.by = 'condition')
+```
+```{r}
+Idents(so_sub_final) <- 'cell_type_final'
+levels(so_sub_final)
+m1 <- FindMarkers(so_sub_final, ident.1 = 'APs and IPs_mutant', ident.2 = 'APs and IPs_control')
+write.csv(m1, "APsDEG.csv")
+getwd()
+```
+
+```{r}
+sox2 <- FetchData(so_sub_final, vars = "Sox2", ident.1 = 'mutant', ident.2 = 'control')
+```
+
+```{r}
+help(subset)
+m.aps <- subset(so_sub_final, idents = 'APs and IPs_mutant')
+c.aps <- subset(so_sub_final, idents = 'APs and IPs_control')
+```
+
+```{r}
+p1 <- DimPlot(so_sub_final)
+p2 <- DotPlot(so_sub_final, features = "Sox2", split.by ='condition')
+p1 +p2
+```
+
+```{r}
+m1 <- FindMarkers(so_sub_final, ident.1 = "AP and IPs", features ="Sox2")
+```
+
+
+```{r}
+library(Seurat)
+Idents(so_sub_final) <- "cell_type_final"
+levels(so_sub_final)
+DotPlot(so_sub_final, feature = c("Dll1", "Notch1", "Notch2", "Sox2"),  split.by = 'condition', scale = T, dot.scale =10)
+help(DotPlot)
+```
+
+```{r}
+ReorderIdent(so_sub_final, var = c('AP and IPs', 'Interneuron Progenitors', 'Immature Neurons', 'Migratory Neurons', 'Mature Neurons'))
+levels(so_sub_final)
+help(ReorderIdent)
+```
+
+```{r}
+library(Seurat)
+VlnPlot(so_sub_final, "Sox2ot", split.by = 'condition')
+```
+
+
+
+```{r, fig.width=8, fig.height=11}
+library(Seurat)
+library(STutility)
+p1 <- FeatureOverlay(so_sub_final, features = c("Mdk"), sampleids = 2)
+FeatureOverlay(so_sub_final, features = c("Mdk", "Neurod1", "Satb2", "Bcl11b"), ncol =2, sampleids = 2:3, pt.size = 2, value.scale = "all", palette = 'Spectral')
+```
+
+
+```{r, fig.width=8, fig.height=11}
+palette.select(info = T)
+```
+
+
+
+```{r}
+VlnPlot(so_sub_final, c("Dlx2", "Gad1"))
+```
+```{r}
+VlnPlot(so_sub_final, c("Satb2", "Fezf2"))
+```
+
+```{r}
+VlnPlot(so_sub_final, c("Neurod2", "Neurod6", "Neurod1"))
+```
+
+```{r}
+VlnPlot(so_sub_final, "Eomes")
+```
+
+
+```{r}
+VlnPlot(so_sub_final, c("Pax6", "Eomes"))
+```
+
+```{r}
+VlnPlot(so_sub_final, "Pou3f2")
+```
+```{r, fig.width=3, fig.height=2}
+FeatureOverlay(so_sub_final, features = ("Lpar1"), sampleids = 2:3, pt.size = 1, value.scale = "all", palette = 'Spectral')
+```
+
+```{r}
+DotPlot(so_sub_final, features = c("Rara", "Rarb", "Cyp26a1", "Rarg", "Crabp2", "Hoxa1"))
+```
+```{r, fig.height=1, fig.width=4}
+DotPlot(so_sub_final, features = c("Rara", "Rarb", "Rarg", "Rxra", "Rxrb", "Rxrg", "Cyp26a1"))
+```
+
+```{r}
+remotes::install_github(
+    "jbergenstrahle/STUtility"
+)
+library(STutility)
+
+ST.FeaturePlot(so_sub_final, features = "Hoxa1")
+```
+
+
+```{r}
+SpatialDimPlot(so_sub_no_meninges)
+```
+
+```{r}
+#Hes1, Hey1, Id4, Ccnd1, Crabp2
+#Neurog2, Neurod2, Neurod6, Bcl11b, Bhlhe22, Capb1, Cntn2, Satb2, Tubb3, Fef2
+#Oli1, Olig2, Id1
+```
+
+```{r}
+VlnPlot(so_sub_final, features = c("Hes1", "Hey1", "Id4", "Ccnd1"), ncol = 2, split.by = 'condition')
+```
+
+```{r}
+DimPlot(so_sub_final)
+Idents(so_sub_final) <- 'condition'
+marks <- FindMarkers(so_sub_final, ident.1 = 'mutant', ident.2 = 'control')
+VlnPlot(so_sub_final, 'Foxc1')
+write.csv(marks, '/Users/christinacomo/Desktop/marks.csv')
+```
+
+```{r}
+Idents(so_sub_final) <- 'cell_type.condition'
+DimPlot(so_sub_final)
+library(Seurat)
+mark1 <- FindMarkers(so_sub_final, ident.1 = 'APs and IPs_mutant', ident.2 = 'APs and IPs_control')
+help(FindMarkers)
+```
+
+```{r}
+write.csv(mark1.df, '/Users/christinacomo/Desktop/mark1.csv')
+mark1.df <- data.frame(mark1)
+```
+
+```{r}
+VlnPlot(so_sub_final, feature = "Sox2ot")
+```
+

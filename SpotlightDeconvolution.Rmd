@@ -1,0 +1,332 @@
+---
+title: "SPOTlight - merge"
+author: "Caitlin Winkler"
+date: "`r Sys.Date()`"
+output:
+  html_notebook:
+    toc: TRUE
+    toc_depth: 3
+    toc_float: TRUE
+    theme: united
+    highlight: tango
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, error = FALSE) 
+```
+
+# 1 Preparation
+
+## 1.1 Load R Packages
+
+```{r}
+BiocManager::install("SPOTlight")
+library(ggplot2)
+library(dplyr)
+library(SPOTlight)
+library(Seurat)
+library(SingleCellExperiment)
+library(SpatialExperiment)
+library(scater)
+library(scran)
+library(NMF)
+library(ggcorrplot)
+```
+
+## 1.2 Set working directory
+
+```{r}
+setwd("/Users/christinacomo/Desktop/Spatial")
+getwd()
+```
+
+# 2 Load Data
+
+As noted in the SPOTlight [vignette](https://marcelosua.github.io/SPOTlight/articles/SPOTlight_kidney.html), the minimal data required to run SPOTlight are:
+
+* ST (sparse) matrix with the expression, raw or normalized, where rows = genes and columns = capture locations (spots)
+* single cell (sparse) matrix with the expression, raw or normalized,, where rows = genes and columns = cells
+* vector indicating the cell identity for each column in the single cell expression matrix
+
+The minimal data can be extracted from Seurat objects.
+
+```{r}
+so <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/merge.rds") # the ST object
+so_scref <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/E14_ref_scRNAseq.RDS") 
+```
+
+# 3 Prepare scRNA-seq Reference Data
+
+## 3.1 Preprocessing
+
+In our case, our scRNA-seq reference object has not been processed. Before we begin deconvolution using SPOTlight, we first need to process our reference data. We can use the [Seurat Standard Workflow](https://satijalab.org/seurat/articles/essential_commands.html) to do this. You could devote a separate R markdown to processing your scRNA-seq reference data, and read in the processed object to this R markdown.
+
+```{r}
+so_scref <- NormalizeData(object = so_scref)
+so_scref <- FindVariableFeatures(object = so_scref)
+so_scref <- ScaleData(object = so_scref)
+so_scref <- RunPCA(object = so_scref)
+so_scref <- FindNeighbors(object = so_scref, reduction = "pca", dims = 1:30)
+so_scref <- FindClusters(object = so_scref, resolution = 0.2, algorithm = 1)
+so_scref <- RunUMAP(object = so_scref, reduction = "pca", dims = 1:30)
+```
+
+Plot the reference data in UMAP space.
+
+```{r}
+DimPlot(so_scref, reduction = "umap")
+```
+Next, we will annotate our clusters. 
+```{r}
+so_scref <- RenameIdents(so_scref, 
+                         '0' = 'Mature Neurons', 
+                         '1' = 'Migratory Neurons', 
+                         '2' = 'Cycling Cells', 
+                         '3' = 'Apical Progenitors', 
+                         '4' = 'Intermediate Progenitors', 
+                         '5' = 'Immature Neurons', 
+                         '6' = 'Interneurons')
+```
+
+Store cluster labels in the meta.data as *cell_type* for downstream processing with SPOTlight.
+
+```{r}
+so_scref@meta.data$cell_type <- as.factor(so_scref@active.ident)
+```
+
+Save processed reference data to use in workflows with control2, mutant1, and mutant2 samples:
+
+```{r}
+saveRDS(so_scref, "/Users/christinacomo/Desktop/Spatial/RDS_files/E14_ref_scRNAseq_processed.rds")
+```
+
+
+## 3.2 SPOTlight Prep
+
+### 3.2.1 Feature Selection
+
+From the SPOTlight vignette, we will downsample our reference data (both in number of cells and number of genes) in order to train the model. We will downsample to 100 cells per cell identity, and restrict the gene set to the marker genes for each cell type along with up to 3000 highly variable genes (in this markdown, we will use 2000 since that is the number of highly variable genes already in our reference object).
+
+Check the cell types contained within our reference atlas:
+
+```{r}
+unique(so_scref@meta.data$cell_type)
+```
+
+Obtain marker genes for each cell identity in our reference:
+
+```{r}
+cluster_markers_all <- FindAllMarkers(so_scref, only.pos = TRUE)
+```
+
+Assess top 10 markers for each cell type in our reference:
+
+```{r}
+cluster_markers_all %>%
+  group_by(cluster) %>% 
+  top_n(10, wt = avg_log2FC)
+```
+
+```{r}
+saveRDS(cluster_markers_all, "/Users/christinacomo/Desktop/Spatial/RDS_files/spotlight_reference_markers.rds")
+cluster_markers_all <- readRDS('/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/spotlight_reference_markers.rds')
+```
+
+### 3.2.2 Cell Downsampling
+
+We will randomly select at most 100 cells per cell identity (if a cell type is comprised of <100 cells, all cells will be used).
+
+```{r}
+so_scref_ds <- subset(x = so_scref, downsample = 100)
+```
+
+# 4 SPOTlight Deconvolution
+
+Note: the following code chunk ran in 11.88 minutes.
+
+```{r}
+library(SPOTlight)
+res <- SPOTlight(
+    x = so_scref_ds,
+    y = so@assays$Spatial@counts,
+    groups = so_scref_ds$cell_type,
+    mgs = cluster_markers_all,
+    hvg = so_scref_ds@assays$RNA@var.features,
+    weight_id = "avg_log2FC",
+    group_id = "cluster",
+    gene_id = "gene")
+```
+
+Save deconvolution for local loading:
+
+```{r}
+saveRDS(res, "/Users/christinacomo/Desktop/Spatial/RDS_files/spotlight_deconvolution_merge.rds")
+```
+
+Extract data from SPOTlight:
+
+```{r}
+# Extract deconvolution matrix
+head(mat <- res$mat)[, seq_len(3)]
+```
+
+```{r}
+# Extract NMF model fit
+mod <- res$NMF
+```
+
+# 5 Visualization
+
+## 5.1 Topic Profiles
+
+How specific is each topic signature for each cell identity? Ideally, each cell identity will have a unique topic profile associated to it.
+
+```{r}
+plotTopicProfiles(
+    x = mod,
+    y = so_scref_ds$cell_type,
+    facet = FALSE,
+    min_prop = 0.01,
+    ncol = 1)
+```
+
+We also want to ensure that all the cells from the same cell identity share a similar topic profile (this means that SPOTlight learned a consistent signature for all the cells from the same cell identity).
+
+```{r}
+plotTopicProfiles(
+    x = mod,
+    y = so_scref_ds$cell_type,
+    facet = TRUE,
+    min_prop = 0.01,
+    ncol = 6)
+```
+
+We can also look at which genes the model learned for each topic. Higher values = the gene is more relevant for that topic.
+
+```{r}
+sign <- basis(mod)
+colnames(sign) <- paste0("Topic", seq_len(ncol(sign)))
+head(sign)
+```
+
+## 5.2 Spatial Correlation Matrix
+
+```{r}
+install.packages('ggcorrplot')
+library(ggcorrplot)
+plotCorrelationMatrix(mat)
+```
+
+## 5.3 Co-Localization
+
+Once we know which cell types are found within each spot, we can graph a representation of spatial interactions where cell types will have stronger edges between them the more often we find them within the same spot.
+
+```{r}
+plotInteractions(mat, "heatmap")
+```
+
+```{r}
+plotInteractions(mat, "network")
+```
+
+## 5.4 Scatterpie
+
+Visualize the cell type proportions as sections of a pie chart for each spot.
+
+```{r}
+ct <- colnames(mat)
+mat[mat < 0.1] <- 0
+
+# Define color palette
+# (here we use 'paletteMartin' from the 'colorBlindness' package)
+paletteMartin <- c(
+    "#000000", "#004949", "#009292", "#ff6db6", "#ffb6db", 
+    "#490092", "#006ddb", "#b66dff", "#6db6ff", "#b6dbff", 
+    "#920000", "#924900", "#db6d00", "#24ff24", "#ffff6d")
+
+pal <- colorRampPalette(paletteMartin)(length(ct))
+names(pal) <- ct
+ pal
+```
+
+### 5.4.1 control1
+
+```{r}
+install.packages('scatterpie')
+library(scatterpie)
+plotSpatialScatterpie(
+    x = so@images$control1@coordinates,
+    y = mat[1:162, ],
+    slice = "control1",
+    img = FALSE,
+    scatterpie_alpha = 1,
+    pie_scale = 0.4) +
+    scale_fill_manual(
+        values = pal,
+        breaks = names(pal))
+
+head(so)
+```
+```{r}
+count
+```
+
+### 5.4.2 control2
+
+```{r}
+plotSpatialScatterpie(
+    x = so@images$control2@coordinates,
+    y = mat[163:388, ],
+    slice = "control2",
+    cell_types = colnames(y),
+    img = FALSE,
+    scatterpie_alpha = 1,
+    pie_scale = 0.4) +
+    scale_fill_manual(
+        values = pal,
+        breaks = names(pal))
+```
+```{r}
+
+```
+
+
+### 5.4.3 mutant1
+
+```{r}
+plotSpatialScatterpie(
+    x = so@images$mutant1@coordinates,
+    y = mat[389:686, ],
+    slice = "mutant1",
+    cell_types = colnames(y),
+    img = FALSE,
+    scatterpie_alpha = 1,
+    pie_scale = 0.4) +
+    scale_fill_manual(
+        values = pal,
+        breaks = names(pal))
+```
+
+### 5.4.4 mutant2
+
+```{r}
+plotSpatialScatterpie(
+    x = so@images$mutant2@coordinates,
+    y = mat[687:894, ],
+    slice = "mutant2",
+    cell_types = colnames(y),
+    img = FALSE,
+    scatterpie_alpha = 1,
+    pie_scale = 0.4) +
+    scale_fill_manual(
+        values = pal,
+        breaks = names(pal))
+```
+
+# 6 Session Info
+
+```{r}
+sessionInfo()
+```
