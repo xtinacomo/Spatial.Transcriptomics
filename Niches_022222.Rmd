@@ -1,0 +1,808 @@
+---
+title: "E14 Spatial NICHES"
+author: "Christina Como"
+date: "`r Sys.Date()`"
+output: 
+  html_notebook:
+    toc: TRUE
+    toc_depth: 4
+    toc_float: TRUE
+    theme: united
+    highlight: tango
+editor_options: 
+  chunk_output_type: inline
+---
+```{r}
+getwd ()
+setwd("/Users/christinacomo/Desktop/Spatial")
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, error = FALSE) 
+```
+
+# 1 Preparation
+
+Here, we prepare our notebook for analysis. This includes loading relevant libraries, defining custom color palettes (optional), and defining any custom helper functions (not needed in this notebook).
+
+##1.1 Install packages
+```{r}
+usethis::create_github_token()
+gitcreds::gitcreds_set()
+```
+
+```{r}
+install.packages("remotes")
+remotes::install_github("satijalab/seurat-wrappers")
+remotes::install_github("msraredon/NICHES")
+install.packages("viridis")
+remotes::install_github("HenrikBengtsson/R.utils", ref="develop")
+
+```
+
+
+## 1.2 Load R packages
+
+```{r}
+library(R.utils)
+library(remotes)
+library(Seurat)
+library(SeuratData)
+library(ggplot2)
+library(cowplot)
+library(patchwork)
+library(dplyr)
+library(SeuratWrappers)
+library(NICHES)
+library(viridis)
+```
+
+```{r}
+SampleA <- readRDS("/Users/christinacomo/Desktop/Spatial/RDS_files/SampleA_spatial.rds")
+SampleB <- readRDS("/Users/christinacomo/Desktop/Spatial/RDS_files/SampleB_spatial.rds")
+SampleC <- readRDS("/Users/christinacomo/Desktop/Spatial/RDS_files/SampleC_spatial.rds")
+SampleD <- readRDS("/Users/christinacomo/Desktop/Spatial/RDS_files/SampleD_spatial.rds")
+```
+
+
+## Load Data, Normalize, Visualize
+```{r}
+#Now subset with  spots
+meninges1 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control1/control1_meninges.csv")
+mge1 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control1/mge.csv")
+lge1 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control1/lge.csv")
+midline1 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control1/midline.csv")
+medial_cortex1 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control1/medial_cortex.csv")
+lateral_cortex1 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control1/lateral_cortex.csv")
+```
+
+
+```{r}
+names(mge1) <- c("barcodes", "region")
+names(lge1) <- c("barcodes", "region")
+names(midline1) <- c("barcodes", "region")
+names(lateral_cortex1) <- c("barcodes", "region")
+names(medial_cortex1) <- c("barcodes", "region")
+names(meninges1) <- c("barcodes", "region")
+```
+
+
+```{r}
+control_1_regions_of_interest <- rbind(mge1, lge1, midline1, lateral_cortex1, medial_cortex1, meninges1) 
+```
+
+#Control 2
+```{r}
+#Now subset with  spots
+meninges2 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control2/Dorsal Meninges.csv")
+mge2 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control2/mge.csv")
+lge2 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control2/lge.csv")
+midline2 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control2/midline.csv")
+medial_cortex2 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control2/medial_cortex.csv")
+lateral_cortex2 <- read.csv("/Users/christinacomo/Desktop/Spatial/data/control2/lateral_cortex.csv")
+```
+
+
+```{r}
+names(mge2) <- c("barcodes", "region")
+names(lge2) <- c("barcodes", "region")
+names(midline2) <- c("barcodes", "region")
+names(lateral_cortex2) <- c("barcodes", "region")
+names(medial_cortex2) <- c("barcodes", "region")
+names(meninges2) <- c("barcodes", "region")
+```
+
+
+```{r}
+control_2_regions_of_interest <- rbind(mge2, lge2, midline2, lateral_cortex2, medial_cortex2, meninges2) 
+```
+
+
+```{r}
+# grab the spot barcodes to use for subsetting
+spots.use1 <- control_1_regions_of_interest$barcodes
+control_1_regions_of_interest <- control_1_regions_of_interest %>% column_to_rownames(var = "barcodes")
+
+# grab the spot barcodes to use for subsetting
+spots.use2 <- control_2_regions_of_interest$barcodes
+control_2_regions_of_interest <- control_2_regions_of_interest %>% column_to_rownames(var = "barcodes")
+```
+
+```{r}
+# check dimensions of regions_of_interest and make sure it is the sum of cc_cortex and cc_meninges
+dim(control_2_regions_of_interest)
+dim(control_1_regions_of_interest)
+
+```
+
+```{r}
+# now, subset the seurat object
+subsetA <- subset(SampleA, cells = spots.use1)
+subsetB <- subset(SampleB, cells = spots.use2)
+```
+
+```{r}
+SpatialDimPlot(subsetA)
+```
+```{r}
+subsetA <- SCTransform(subsetA, assay = "Spatial", verbose = FALSE)
+# Dimensional reduction with all cells
+subsetA <- RunPCA(subsetA, assay = "SCT", verbose = FALSE)
+subsetA <- FindNeighbors(subsetA, reduction = "pca", dims = 1:30)
+subsetA <- FindClusters(subsetA, verbose = FALSE)
+subsetA <- RunUMAP(subsetA, reduction = "pca", dims = 1:30)
+p1 <- DimPlot(subsetA, reduction = "umap",group.by = 'seurat_clusters', label = TRUE)
+p2 <- SpatialDimPlot(subsetA, label = TRUE,group.by = 'seurat_clusters', label.size = 3)
+p1 + p2
+```
+
+```{r}
+SpatialDimPlot(subsetB)
+```
+```{r}
+subsetB <- SCTransform(subsetB, assay = "Spatial", verbose = FALSE)
+# Dimensional reduction with all cells
+subsetB <- RunPCA(subsetB, assay = "SCT", verbose = FALSE)
+subsetB <- FindNeighbors(subsetB, reduction = "pca", dims = 1:30)
+subsetB <- FindClusters(subsetB, verbose = FALSE)
+subsetB <- RunUMAP(subsetB, reduction = "pca", dims = 1:30)
+p1 <- DimPlot(subsetB, reduction = "umap",group.by = 'seurat_clusters', label = TRUE)
+p2 <- SpatialDimPlot(subsetB, label = TRUE,group.by = 'seurat_clusters', label.size = 3)
+p1 + p2
+```
+```{r}
+subsetB@meta.data$x <- subsetB@images$seurat_clusters@coordinates$row
+subsetB@meta.data$y <- subsetB@images$seurat_clusters@coordinates$col
+
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, error = FALSE) 
+```
+
+Project: *Spatial transcriptomics to study mechanisms of meninges development.*
+2021 RBI Pilot Award Project
+
+In this notebook we will take our subsetted ST Seurat object from the *02_seurat_spatial.Rmd* workflow and perform analysis using the new `NICHES` package. NICHES is a toolset which transforms single-cell atlases into single-cell-signaling atlases. NICHES may be used to estimate individual cellular microenvironments from ST data. For more information, see the [documentation](https://msraredon.github.io/NICHES/).
+
+Data consists of four samples from E14 embryos (2 control wild-type samples, and 2 mutant *Foxc1-KO* samples). Mice that lack the transcription factor *Foxc1* (*Foxc1-KO*) do not develop normal meningeal fibroblast layers around the forebrain, leading to defects in cortical neurogenesis caused by lack of meninges-derived factors. Notably, the neocortex is grossly elongated in *Foxc1-KO* mutants.
+
+# 1 Preparation
+
+## 1.1 Load R packages
+```{r}
+remotes::install_github(
+    "jbergenstrahle/STUtility"
+)
+remotes::install_github('satijalab/seurat-wrappers')
+usethis::create_github_token()`
+gitcreds::gitcreds_set()
+```
+
+
+```{r}
+library(Seurat)
+library(SeuratWrappers)
+library(STutility)
+library(ggplot2)
+library(cowplot)
+library(patchwork)
+library(dplyr)
+library(NICHES)
+library(viridis)
+```
+
+## 1.2 Define colors
+
+```{r}
+custom_colors <- list()
+
+colors_dutch <- c(
+  '#FFC312','#C4E538','#12CBC4','#FDA7DF','#ED4C67',
+  '#F79F1F','#A3CB38','#1289A7','#D980FA','#B53471',
+  '#EE5A24','#009432','#0652DD','#9980FA','#833471',
+  '#EA2027','#006266','#1B1464','#5758BB','#6F1E51'
+)
+
+colors_spanish <- c(
+  '#40407a','#706fd3','#f7f1e3','#34ace0','#33d9b2',
+  '#2c2c54','#474787','#aaa69d','#227093','#218c74',
+  '#ff5252','#ff793f','#d1ccc0','#ffb142','#ffda79',
+  '#b33939','#cd6133','#84817a','#cc8e35','#ccae62'
+)
+custom_colors <- list()
+colorBlindGrey8   <- c("#E69F00", "#56B4E9", "#009E73", 
+                        "#0072B2", "#D55E00", "#CC79A7")
+custom_colors$discrete <- c(colorBlindGrey8)
+scales::show_col(colorBlindGrey8)
+
+```
+
+# 2 Load Data
+
+In a previous notebook (*02_seurat_spatial_subset.Rmd*), we subsetted our processed Seurat object to only include spots corresponding to anatomical regions of interest (namely the cortex and ganglionic eminences). Here, we will load in our subsetted Seurat object (called `st_obj` in this notebook) for further downstream analysis.
+
+```{r}
+st_obj <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/RDS_files/so_sub_final.rds")
+```
+
+## 2.1 FeatureOverlay plot
+
+First, let's remind ourselves what our data looks like when we overlay our spatial feature info on top of the H&E images using the `FeatureOverlay()` function from the `STutility` package. Here, we will color our data by `cell_type`:
+
+```{r, fig.height = 3, fig.width = 3}
+library(Seurat)
+library(STutility)
+FeatureOverlay(st_obj,
+               features = "cell_type",
+               sampleids = 1:4,
+               pt.size = 1.0,
+               ncols = 2,
+               cols = colorBlindGrey8,
+               type = "processed",
+               show.sb = FALSE)
+
+
+SpatialDimPlot(st_obj)
+```
+
+## 2.2 UMAP plot
+
+Similar to above, let's also remind ourselves what our data looks like when plotted in UMAP space. Here we will just load in a plot generated in a previous notebook (*02_seurat_spatial_subset.Rmd*):
+
+```{r, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("results/plots/umap_sub.png")
+```
+
+# 3 NICHES
+
+## 3.1 control_1
+
+For our analysis with NICHES, we first need to subset our data so that we are only working with one section at a time. We'll start with section *control1*.
+
+```{r}
+# Remember: to subset a object processed using STutility, we need to use the SubsetSTData function
+ctrl1 <- SubsetSTData(st_obj, expression = sample_id %in% "control1")
+```
+
+### 3.1.1 Format spatial coordinates
+
+Next, we will format the spatial coordinate metadata so that every spot has an explicitly labeled x and y coordinate. Note that because we processed our data using `STutility`, we can access our spot coordinates via the S4 class `Staffli` object stored inside our `Seurat` object.
+
+```{r}
+staffli_obj <- GetStaffli(ctrl1)
+ctrl1@meta.data$x <- staffli_obj@meta.data$pixel_x
+ctrl1@meta.data$y <- staffli_obj@meta.data$pixel_y
+```
+
+### 3.1.2 Run NICHES
+
+NICHES can be run on imputed or non-imputed data. Here, we will use imputed data.
+
+```{r}
+ctrl1 <- SeuratWrappers::RunALRA(ctrl1)
+```
+
+```{r}
+NICHES_output <- RunNICHES(object = ctrl1,
+                           LR.database = "fantom5",
+                           species = "mouse",
+                           assay = "alra",
+                           position.x = 'x',
+                           position.y = 'y',
+                           min.cells.per.ident = 0,
+                           min.cells.per.gene = NULL,
+                           meta.data.to.map = c('seurat_clusters',
+                                                'region',
+                                                'condition',
+                                                'cell_type'),
+                           CellToCell = FALSE,
+                           CellToSystem = FALSE,
+                           SystemToCell = FALSE,
+                           CellToCellSpatial = FALSE,
+                           CellToNeighborhood = FALSE,
+                           NeighborhoodToCell = TRUE)
+```
+
+NICHES outputs a list of objects. Each object contains a certain style of cell-system signaling atlas. Above, we have only calculated a single cell-system signaling atlas of interest, namely, individual cellular microenvironment (`NeighborhoodToCell`).
+
+### 3.1.3 Embed NICHES output using UMAP
+
+We will next isolate this output and embed using UMAP to visualize the microenvironment of each cell.
+
+```{r}
+niche <- NICHES_output[['NeighborhoodToCell']]
+Idents(niche) <- niche[['ReceivingType']]
+
+# Scale and visualize
+niche <- ScaleData(niche)
+niche <- FindVariableFeatures(niche, selection.method = "disp")
+niche <- RunPCA(niche)
+ElbowPlot(niche, ndims = 50)
+```
+
+```{r}
+niche <- RunUMAP(niche, dims = 1:10)
+```
+
+```{r, fig.height=6, fig.width=8}
+p1 <- DimPlot(niche, reduction = 'umap')
+p2 <- DimPlot(niche, reduction = 'umap', group.by = "cell_type")
+p3 <- DimPlot(niche, reduction = 'umap', group.by = "condition")
+p4 <- DimPlot(niche, reduction = 'umap', group.by = "region")
+
+pw_plot <- p1 + p2 + p3 + p4 + plot_layout(ncol = 2)
+pw_plot + plot_annotation(title = "Cellular Microenvironment", 
+                          theme = theme(plot.title = element_text(size=30)))
+```
+
+### 3.1.4 Find niche-specific signaling mechanisms
+
+Let's now find signaling mechanisms that are specific to each celltype niche, plotting some of the results in heatmap form:
+
+```{r}
+markers <- FindAllMarkers(niche, min.pct = 0.25, only.pos = TRUE, test.use = "roc")
+GOI_niche <- markers %>% group_by(cluster) %>% top_n(5, myAUC)
+DoHeatmap(niche, 
+          features = unique(GOI_niche$gene),
+          label = FALSE) + 
+  scale_fill_gradientn(colors = c("grey", "white", "blue"))
+```
+
+We can confirm that identified celltype-specific signaling mechanisms are indeed specific to tissue regions in which those cells are found by plotting matched ligand and receptor pairs. As an example, we will plot the ligand *Efna1* and the receptor *Epha8* from the Mature Neurons cluster:
+
+```{r, fig.height = 1.5, fig.width = 3}
+DefaultAssay(ctrl1) <- 'alra'
+FeatureOverlay(ctrl1,
+               features = c("Dll1", "Notch1"),
+               pt.size = 1.0,
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               type = "processed",
+               slot = "data",
+               show.sb = FALSE,
+               ncols = 2)
+```
+
+### 3.1.5 Map NICHES output to ST object
+
+Next, and more usefully, we can map over the output from NICHES onto the original ST object as follows:
+
+```{r}
+# Add Niches output as an assay
+niches.data <- GetAssayData(object =  niche[['NeighborhoodToCell']], slot = 'data')
+colnames(niches.data) <- niche[['ReceivingCell']]$ReceivingCell
+ctrl1[["NeighborhoodToCell"]] <- CreateAssayObject(data = niches.data )
+DefaultAssay(ctrl1) <- "NeighborhoodToCell"
+ctrl1 <- ScaleData(ctrl1)
+```
+
+This allows for direct visualization of niche interactions of interest in a spatial context:
+
+```{r, fig.height = 3, fig.width = 3}
+FeatureOverlay(ctrl1,
+               features = c("Dll1—Notch1", "Dll1—Notch2", "Mfng—Notch2", "Dll4—Notch2"),
+               pt.size = 1.0,
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               type = "processed",
+               slot = "scale.data",
+               show.sb = FALSE,
+               ncols = 2)
+```
+
+```{r, fig.height=3, fig.width=3}
+ST.FeaturePlot(ctrl1, 
+               features = c("Dll1—Notch1", "Dll1—Notch2", "Mfng—Notch2", "Dll4—Notch2"), 
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               grid.ncol = 2,
+               show.sb = FALSE)
+
+ggsave("results/plots/NICHES_ctrl1_FeaturePlot.pdf")
+```
+
+Let's repeat the workflow outlined above with our remaining sections.
+
+## 3.2 control_2
+
+```{r}
+# Remember: to subset a object processed using STutility, we need to use the SubsetSTData function
+ctrl2 <- SubsetSTData(st_obj, expression = sample_id %in% "control2")
+```
+
+### 3.2.1 Format spatial coordinates
+
+```{r}
+staffli_obj <- GetStaffli(ctrl2)
+ctrl2@meta.data$x <- staffli_obj@meta.data$pixel_x
+ctrl2@meta.data$y <- staffli_obj@meta.data$pixel_y
+```
+
+### 3.2.2 Run NICHES
+
+```{r}
+ctrl2 <- SeuratWrappers::RunALRA(ctrl2)
+```
+
+```{r}
+NICHES_output <- RunNICHES(object = ctrl2,
+                           LR.database = "fantom5",
+                           species = "mouse",
+                           assay = "alra",
+                           position.x = 'x',
+                           position.y = 'y',
+                           min.cells.per.ident = 0,
+                           min.cells.per.gene = NULL,
+                           meta.data.to.map = c('seurat_clusters',
+                                                'region',
+                                                'condition',
+                                                'cell_type'),
+                           CellToCell = FALSE,
+                           CellToSystem = FALSE,
+                           SystemToCell = FALSE,
+                           CellToCellSpatial = FALSE,
+                           CellToNeighborhood = FALSE,
+                           NeighborhoodToCell = TRUE)
+```
+
+### 3.2.3 Embed NICHES output using UMAP
+
+```{r}
+niche <- NICHES_output[['NeighborhoodToCell']]
+Idents(niche) <- niche[['ReceivingType']]
+
+# Scale and visualize
+niche <- ScaleData(niche)
+niche <- FindVariableFeatures(niche, selection.method = "disp")
+niche <- RunPCA(niche)
+ElbowPlot(niche, ndims = 50)
+```
+
+```{r}
+niche <- RunUMAP(niche, dims = 1:10)
+```
+
+```{r, fig.height=6, fig.width=8}
+p1 <- DimPlot(niche, reduction = 'umap', cols = colorBlindGrey8)
+p2 <- DimPlot(niche, reduction = 'umap', group.by = "cell_type", cols = colorBlindGrey8)
+p3 <- DimPlot(niche, reduction = 'umap', group.by = "condition", cols = colorBlindGrey8)
+p4 <- DimPlot(niche, reduction = 'umap', group.by = "region", cols = colorBlindGrey8)
+
+pw_plot <- p1 + p2 + p3 + p4 + plot_layout(ncol = 2)
+pw_plot + plot_annotation(title = "Cellular Microenvironment", 
+                          theme = theme(plot.title = element_text(size=30)))
+```
+
+### 3.2.4 Find niche-specific signaling mechanisms
+
+```{r}
+markers <- FindAllMarkers(niche, min.pct = 0.25, only.pos = TRUE, test.use = "roc")
+GOI_niche <- markers %>% group_by(cluster) %>% top_n(5, myAUC)
+DoHeatmap(niche, 
+          features = unique(GOI_niche$gene),
+          label = FALSE) + 
+  scale_fill_gradientn(colors = c("grey", "white", "blue"))
+```
+
+```{r, fig.height = 1.5, fig.width = 3}
+DefaultAssay(ctrl2) <- 'alra'
+FeatureOverlay(ctrl2,
+               features = c("Mfap5", "Notch1"),
+               pt.size = 1.0,
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               type = "processed",
+               slot = "data",
+               show.sb = FALSE,
+               ncols = 2)
+```
+
+### 3.2.5 Map NICHES output to ST object
+
+```{r}
+# Add Niches output as an assay
+niches.data <- GetAssayData(object =  niche[['NeighborhoodToCell']], slot = 'data')
+colnames(niches.data) <- niche[['ReceivingCell']]$ReceivingCell
+ctrl2[["NeighborhoodToCell"]] <- CreateAssayObject(data = niches.data )
+DefaultAssay(ctrl2) <- "NeighborhoodToCell"
+ctrl2 <- ScaleData(ctrl2)
+```
+
+```{r, fig.height = 3, fig.width = 3}
+FeatureOverlay(ctrl2,
+               features = c("Dll1—Notch1", "Dll1—Notch2", "Mfng—Notch2", "Dll4—Notch2"),
+               pt.size = 1.0,
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               type = "processed",
+               slot = "scale.data",
+               show.sb = FALSE,
+               ncols = 2)
+ggsave("results/plots/NICHES_ctrl2_FeatureOverlay.pdf")
+```
+
+```{r, fig.height=3, fig.width=3}
+ST.FeaturePlot(ctrl2, 
+               features = c("Dll1—Notch1", "Dll1—Notch2", "Mfng—Notch2", "Dll4—Notch2"), 
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               grid.ncol = 2,
+               show.sb = FALSE)
+
+ggsave("results/plots/NICHES_ctrl2_FeaturePlot.pdf")
+```
+
+## 3.3 mutant_1
+
+```{r}
+# Remember: to subset a object processed using STutility, we need to use the SubsetSTData function
+mut1 <- SubsetSTData(st_obj, expression = sample_id %in% "mutant1")
+```
+
+### 3.3.1 Format spatial coordinates
+
+```{r}
+staffli_obj <- GetStaffli(mut1)
+mut1@meta.data$x <- staffli_obj@meta.data$pixel_x
+mut1@meta.data$y <- staffli_obj@meta.data$pixel_y
+```
+
+### 3.3.2 Run NICHES
+
+```{r}
+mut1 <- SeuratWrappers::RunALRA(mut1)
+```
+
+```{r}
+NICHES_output <- RunNICHES(object = mut1,
+                           LR.database = "fantom5",
+                           species = "mouse",
+                           assay = "alra",
+                           position.x = 'x',
+                           position.y = 'y',
+                           min.cells.per.ident = 0,
+                           min.cells.per.gene = NULL,
+                           meta.data.to.map = c('seurat_clusters',
+                                                'region',
+                                                'condition',
+                                                'cell_type'),
+                           CellToCell = FALSE,
+                           CellToSystem = FALSE,
+                           SystemToCell = FALSE,
+                           CellToCellSpatial = FALSE,
+                           CellToNeighborhood = FALSE,
+                           NeighborhoodToCell = TRUE)
+```
+
+### 3.3.3 Embed NICHES output using UMAP
+
+```{r}
+niche <- NICHES_output[['NeighborhoodToCell']]
+Idents(niche) <- niche[['ReceivingType']]
+
+# Scale and visualize
+niche <- ScaleData(niche)
+niche <- FindVariableFeatures(niche, selection.method = "disp")
+niche <- RunPCA(niche)
+ElbowPlot(niche, ndims = 50)
+```
+
+```{r}
+niche <- RunUMAP(niche, dims = 1:10)
+```
+
+```{r, fig.height=6, fig.width=8}
+p1 <- DimPlot(niche, reduction = 'umap', cols = colorBlindGrey8)
+p2 <- DimPlot(niche, reduction = 'umap', cols = colorBlindGrey8, group.by = "cell_type")
+p3 <- DimPlot(niche, reduction = 'umap', cols = colorBlindGrey8, group.by = "condition")
+p4 <- DimPlot(niche, reduction = 'umap', cols = colorBlindGrey8, group.by = "region")
+
+pw_plot <- p1 + p2 + p3 + p4 + plot_layout(ncol = 2)
+pw_plot + plot_annotation(title = "Cellular Microenvironment", 
+                          theme = theme(plot.title = element_text(size=30)))
+```
+
+### 3.3.4 Find niche-specific signaling mechanisms
+
+```{r}
+markers <- FindAllMarkers(niche, min.pct = 0.25, only.pos = TRUE, test.use = "roc")
+GOI_niche <- markers %>% group_by(cluster) %>% top_n(5, myAUC)
+DoHeatmap(niche, 
+          features = unique(GOI_niche$gene),
+          label = FALSE) + 
+  scale_fill_gradientn(colors = c("grey", "white", "blue"))
+```
+
+```{r, fig.height = 1.5, fig.width = 3}
+DefaultAssay(mut1) <- 'alra'
+FeatureOverlay(mut1,
+               features = c("Sst", "Sstr2"),
+               pt.size = 1.0,
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               type = "processed",
+               slot = "data",
+               show.sb = FALSE,
+               ncols = 2)
+```
+
+### 3.3.5 Map NICHES output to ST object
+
+```{r}
+# Add Niches output as an assay
+niches.data <- GetAssayData(object =  niche[['NeighborhoodToCell']], slot = 'data')
+colnames(niches.data) <- niche[['ReceivingCell']]$ReceivingCell
+mut1[["NeighborhoodToCell"]] <- CreateAssayObject(data = niches.data )
+DefaultAssay(mut1) <- "NeighborhoodToCell"
+mut1 <- ScaleData(mut1)
+```
+
+```{r, fig.height = 3, fig.width = 3}
+FeatureOverlay(mut1,
+               features = c("Dll1—Notch1", "Dll1—Notch2", "Mfng—Notch2", "Dll4—Notch2"),
+               pt.size = 1.0,
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               type = "processed",
+               slot = "scale.data",
+               show.sb = FALSE,
+               ncols = 2)
+ggsave("results/plots/NICHES_mut1_FeatureOverlay.pdf")
+```
+
+```{r, fig.height=3, fig.width=3}
+ST.FeaturePlot(mut1, 
+               features = c("Dll1—Notch1", "Dll1—Notch2", "Mfng—Notch2", "Dll4—Notch2"), 
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               grid.ncol = 2,
+               show.sb = FALSE)
+
+ggsave("results/plots/NICHES_mut1_FeaturePlot.pdf")
+```
+
+## 3.4 mutant_2
+
+```{r}
+# Remember: to subset a object processed using STutility, we need to use the SubsetSTData function
+mut2 <- SubsetSTData(st_obj, expression = sample_id %in% "mutant2")
+```
+
+### 3.4.1 Format spatial coordinates
+
+```{r}
+staffli_obj <- GetStaffli(mut2)
+mut2@meta.data$x <- staffli_obj@meta.data$pixel_x
+mut2@meta.data$y <- staffli_obj@meta.data$pixel_y
+```
+
+### 3.4.2 Run NICHES
+
+```{r}
+mut2 <- SeuratWrappers::RunALRA(mut2)
+```
+
+```{r}
+NICHES_output.2 <- RunNICHES(object = mut2,
+                           LR.database = "fantom5",
+                           species = "mouse",
+                           assay = "alra",
+                           position.x = 'x',
+                           position.y = 'y',
+                           min.cells.per.ident = 0,
+                           min.cells.per.gene = NULL,
+                           meta.data.to.map = c('seurat_clusters',
+                                                'region',
+                                                'condition',
+                                                'cell_type'),
+                           CellToCell = FALSE,
+                           CellToSystem = FALSE,
+                           SystemToCell = FALSE,
+                           CellToCellSpatial = FALSE,
+                           CellToNeighborhood = FALSE,
+                           NeighborhoodToCell = TRUE)
+```
+
+### 3.4.3 Embed NICHES output using UMAP
+
+```{r}
+niche.2 <- NICHES_output.2[['NeighborhoodToCell']]
+Idents(niche.2) <- niche.2[['ReceivingType']]
+
+# Scale and visualize
+niche.2 <- ScaleData(niche.2)
+niche.2 <- FindVariableFeatures(niche.2, selection.method = "disp")
+niche.2 <- RunPCA(niche.2)
+ElbowPlot(niche.2, ndims = 50)
+```
+
+```{r}
+niche.2 <- RunUMAP(niche.2, dims = 1:10)
+```
+
+```{r, fig.height=6, fig.width=8}
+p1 <- DimPlot(niche.2, reduction = 'umap', cols = colorBlindGrey8)
+p2 <- DimPlot(niche.2, reduction = 'umap', cols = colorBlindGrey8, group.by = "cell_type")
+p3 <- DimPlot(niche.2, reduction = 'umap', cols = colorBlindGrey8, group.by = "condition")
+p4 <- DimPlot(niche.2, reduction = 'umap', cols = colorBlindGrey8, group.by = "region")
+
+pw_plot <- p1 + p2 + p3 + p4 + plot_layout(ncol = 2)
+pw_plot + plot_annotation(title = "Cellular Microenvironment", 
+                          theme = theme(plot.title = element_text(size=30)))
+```
+
+### 3.4.4 Find niche-specific signaling mechanisms
+
+```{r}
+markers <- FindAllMarkers(niche.2, min.pct = 0.25, only.pos = TRUE, test.use = "roc")
+GOI_niche.2 <- markers %>% group_by(cluster) %>% top_n(5, myAUC)
+DoHeatmap(niche.2, 
+          features = unique(GOI_niche.2$gene),
+          label = FALSE) + 
+  scale_fill_gradientn(colors = c("grey", "white", "blue"))
+```
+
+```{r, fig.height = 1.5, fig.width = 3}
+DefaultAssay(mut2) <- 'alra'
+FeatureOverlay(mut2,
+               features = c("App", "Cd74"),
+               pt.size = 1.0,
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               type = "processed",
+               slot = "data",
+               show.sb = FALSE,
+               ncols = 2)
+```
+
+### 3.4.5 Map NICHES output to ST object
+
+```{r}
+# Add Niches output as an assay
+niches.data <- GetAssayData(object =  niche[['NeighborhoodToCell']], slot = 'data')
+colnames(niches.data) <- niche[['ReceivingCell']]$ReceivingCell
+mut2[["NeighborhoodToCell"]] <- CreateAssayObject(data = niches.data )
+DefaultAssay(mut2) <- "NeighborhoodToCell"
+mut2 <- ScaleData(mut2)
+```
+
+```{r, fig.height = 3, fig.width = 3}
+FeatureOverlay(mut2,
+               features = c("Dll1—Notch1", "Dll1—Notch2", "Mfng—Notch2", "Dll4—Notch2"),
+               pt.size = 1.0,
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               type = "processed",
+               slot = "scale.data",
+               show.sb = FALSE,
+               ncols = 2)
+ggsave("results/plots/NICHES_mut2_FeatureOverlay.pdf")
+```
+
+```{r, fig.height=3, fig.width=3}
+ST.FeaturePlot(mut2, 
+               features = c("Dll1—Notch1", "Dll1—Notch2", "Mfng—Notch2", "Dll4—Notch2"), 
+               cols = c("lightgray", "mistyrose", "red", "dark red", "black"),
+               grid.ncol = 2,
+               show.sb = FALSE)
+
+ggsave("results/plots/NICHES_mut2_FeaturePlot.pdf")
+```
+
+# 4 Session Info
+
+```{r}
+sessionInfo()
+```
