@@ -1,0 +1,192 @@
+
+---
+title: "GSEA Analysis: DEG bw ctrl and mutant clusters 06.26.24"
+author: "Christina Como"
+output:
+  html_notebook:
+    toc: TRUE
+    toc_depth: 3
+    toc_float: TRUE
+    theme: united
+    highlight: tango
+editor_options: 
+  chunk_output_type: inline
+---
+# 1 Install packages
+```{r}
+BiocManager::install("clusterProfiler", version = "3.19")
+#BiocManager::install("pathview")
+#BiocManager::install("enrichplot")
+```
+
+# 2 Load libraries
+```{r}
+library(enrichplot)
+library(clusterProfiler)
+library(ggplot2)
+library(org.Mm.eg.db)
+```
+
+# 3 Read in data
+```{r}
+progenitors.deg <- read.csv('/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/outputs/progenitors_DEG.csv')
+```
+
+# 4 Cluster 0 GSEA processing
+```{r}
+# we want the log2 fold change
+c1.fc <- progenitors.deg$avg_log2FC
+
+#name vector
+names(c1.fc) <- progenitors.deg$Gene
+
+# omit any NA values 
+gene_list <- na.omit(c1.fc)
+
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+head(gene_list)
+```
+
+
+```{r}
+gse.1 <- gseGO(geneList=gene_list, 
+             ont ="ALL", 
+             keyType = "SYMBOL",
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             nPermSimple = 1000,
+             verbose = TRUE, 
+             OrgDb = org.Mm.eg.db, 
+             pAdjustMethod = "none")
+```
+# Dot Plot
+```{r}
+help(dotplot)
+dotplot(gse.1, showCategory=20, split=".sign") + facet_grid(.~.sign)
+help(dotplot)
+```
+```{r}
+dotplot(gse.1, showCategory=category, split=".sign") + facet_grid(.~.sign)
+category <- c("multicellular organism development", "cellular developmental process", "neuron development", "cell differentiation", "system development")
+```
+
+
+# Category netplot
+```{r}
+help(cnetplot)
+# categorySize can be either 'pvalue' or 'geneNum'
+cnetplot(gse.1, categorySize="pvalue", foldChange=gene_list, showCategory = "cell differentiation", layout = "kk", circular = FALSE)
+
+```
+
+# Ridgeplot
+```{r, fig.height=5}
+ridgeplot(gse.1) + labs(x = "enrichment distribution")
+```
+
+
+```{r}
+dotplot(gse.1, showCategory=10, split=".sign") + facet_grid(.~.sign)
+```
+
+# GSEA plot
+```{r}
+# Use the `Gene Set` param for the index in the title, and as the value for geneSetId
+gseaplot(gse.1, by = "all", title = gse.1$Description[30], geneSetID = 7)
+```
+
+```{r}
+# Use the `Gene Set` param for the index in the title, and as the value for geneSetId
+gseaplot(gse.1, by = "all", title = gse.1$Description[30], geneSetID = 1)
+``
+```
+
+```{r}
+df <- data.frame(gse.1$Description)
+```
+
+
+```{r}
+cnetplot(gse.1, categorySize="pvalue", foldChange=gene_list, showCategory = 3)
+```
+# KEGG
+
+```{r}
+keytypes(org.Mm.eg.db)
+
+library(org.Mm.eg.db)
+ms <- org.Mm.eg.db
+my.symbols <- progenitors.deg$Gene
+entrez <- select(ms, 
+       keys = my.symbols,
+       columns = c("ENTREZID", "SYMBOL"),
+       keytype = "SYMBOL")
+```
+
+
+```{r}
+head(entrez)
+write.csv(entrez, '/Users/christinacomo/Desktop/entrez.csv')
+merge <- read.csv('/Users/christinacomo/Desktop/entrez.csv')
+```
+
+
+```{r}
+# Create a vector of the gene unuiverse
+kegg_gene_list <- merge$avg_log2FC
+
+# Name vector with ENTREZ ids
+names(kegg_gene_list) <- merge$ENTREZID
+
+# omit any NA values 
+kegg_gene_list<-na.omit(kegg_gene_list)
+
+# sort the list in decreasing order (required for clusterProfiler)
+kegg_gene_list = sort(kegg_gene_list, decreasing = TRUE)
+head(kegg_gene_list)
+```
+
+```{r}
+kegg_organism = "mmu"
+kk2 <- gseKEGG(geneList     = kegg_gene_list,
+               organism     = kegg_organism,
+               nPerm        = 10000,
+               minGSSize    = 3,
+               maxGSSize    = 800,
+               pvalueCutoff = 0.05,
+               pAdjustMethod = "none",
+               keyType       = "ncbi-geneid")
+```
+
+```{r}
+dotplot(kk2, showCategory = 10, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
+```
+```{r}
+ pairwise_termsim(kk2)
+
+```
+
+```{r}
+ridgeplot(kk2) + labs(x = "enrichment distribution")
+
+```
+
+```{r}
+df2 <- as.data.frame(kk2$Description)
+gseaplot(kk2, by = "all", title = kk2$Description[35], geneSetID = 1)
+
+```
+
+```{r}
+library(pathview)
+kk2$geneSets
+# Produce the native KEGG plot (PNG)
+dme <- pathview(gene.data=kegg_gene_list, pathway.id="	
+dme04130
+", species = kegg_organism)
+
+# Produce a different plot (PDF) (not displayed here)
+dme <- pathview(gene.data=kegg_gene_list, pathway.id="dme04130", species = kegg_organism, kegg.native = F)
+```
+
