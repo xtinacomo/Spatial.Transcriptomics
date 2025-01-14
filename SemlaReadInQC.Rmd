@@ -1,0 +1,287 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+setwd("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/raw.data/control1/")
+getwd()
+
+samples <- ("./filtered_feature_bc_matrix.h5")
+imgs <- "./tissue_lowres_image.png"
+spotfiles <- "./tissue_positions_list.csv"
+json <- "./scalefactors_json.json"
+```
+
+```{r}
+infoTable <- tibble(samples, imgs, spotfiles, json, # Add required columns
+                    sample = ("Control1"),
+                    condition = "Control") # Add additional column
+```
+
+```{r}
+control1 <- ReadVisiumData(infoTable)
+control1
+```
+
+```{r}
+spatial_data <- GetStaffli(control1)
+control1 <- LoadImages(control1)
+ImagePlot(control1)
+```
+
+```{r}
+p <- MapFeaturesSummary(control1, 
+                        features = "nFeature_Spatial", 
+                        subplot_type = "violin")
+p
+```
+
+```{r}
+# Normalize data and find variable features for Visium data
+control1 <- control1 |>
+  NormalizeData() |>
+  FindVariableFeatures(nfeatures = 10000) |>
+  ScaleData() |> 
+  RunPCA() |> 
+  FindNeighbors(reduction = "pca", dims = 1:30) |> 
+  FindClusters(verbose = FALSE) |> 
+  RunUMAP(reduction = "pca", dims = 1:30)
+```
+
+```{r}
+p1 <- DimPlot(control1)
+p2 <- MapLabels(control1, column_name = "seurat_clusters", ncol = 1) &
+  theme(legend.position = "right")
+p1 + p2
+```
+
+```{r}
+MapLabels(control1, 
+          column_name = "seurat_clusters", 
+          image_use = "raw", 
+          override_plot_dims = TRUE) +
+  plot_layout(guides = "collect") &
+  guides(fill = guide_legend(override.aes = list(size = 5), 
+                             ncol = 2)) &
+  theme(legend.position = "right")
+```
+```{r}
+saveRDS(control1, "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/control1.semla.rds")
+```
+
+# Control 2 
+```{r}
+library(tibble)
+library(semla)
+setwd("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/")
+getwd()
+
+samples <- ("./filtered_feature_bc_matrix.h5")
+imgs <- "./tissue_lowres_image.png"
+spotfiles <- "./tissue_positions_list.csv"
+json <- "./scalefactors_json.json"
+```
+
+```{r}
+infoTable <- tibble(samples, imgs, spotfiles, json, # Add required columns
+                    sample = ("Control2"),
+                    condition = "Control") # Add additional column
+```
+
+```{r}
+control2 <- ReadVisiumData(infoTable)
+```
+
+```{r}
+spatial_data <- GetStaffli(control2)
+control2 <- LoadImages(control2)
+ImagePlot(control2)
+```
+
+```{r}
+p <- MapFeaturesSummary(control2, 
+                        features = "nFeature_Spatial", 
+                        subplot_type = "violin")
+p
+```
+```{r}
+# Normalize data and find variable features for Visium data
+control2 <- control2 |>
+  NormalizeData() |>
+  FindVariableFeatures(nfeatures = 10000) |>
+  ScaleData() |> 
+  RunPCA() |> 
+  FindNeighbors(reduction = "pca", dims = 1:30) |> 
+  FindClusters(verbose = FALSE) |> 
+  RunUMAP(reduction = "pca", dims = 1:30)
+```
+
+```{r}
+p1 <- DimPlot(control2)
+p2 <- MapLabels(control2, column_name = "seurat_clusters", ncol = 1) &
+  theme(legend.position = "right")
+p1 + p2
+```
+
+```{r}
+library(patchwork)
+MapLabels(control2, 
+          column_name = "seurat_clusters", 
+          image_use = "raw", 
+          override_plot_dims = TRUE) +
+  plot_layout(guides = "collect") &
+  guides(fill = guide_legend(override.aes = list(size = 5), 
+                             ncol = 2)) &
+  theme(legend.position = "right")
+```
+```{r}
+saveRDS(control2, "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/control2.semla.rds")
+```
+
+```{r}
+
+```
+
+
+```{r}
+setwd("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/raw.data/mutant1/")
+getwd()
+
+samples <- ("./filtered_feature_bc_matrix.h5")
+imgs <- "./tissue_lowres_image.png"
+spotfiles <- "./tissue_positions_list.csv"
+json <- "./scalefactors_json.json"
+```
+
+```{r}
+infoTable <- tibble(samples, imgs, spotfiles, json, # Add required columns
+                    sample = ("Mutant1"),
+                    condition = "Mutant") # Add additional column
+```
+
+```{r}
+mutant1 <- ReadVisiumData(infoTable)
+mutant1
+```
+
+```{r}
+spatial_data <- GetStaffli(mutant1)
+mutant1 <- LoadImages(mutant1)
+ImagePlot(mutant1)
+```
+
+```{r}
+p <- MapFeaturesSummary(mutant1, 
+                        features = "nFeature_Spatial", 
+                        subplot_type = "violin")
+p
+```
+
+```{r}
+# Normalize data and find variable features for Visium data
+mutant1 <- mutant1 |>
+  NormalizeData() |>
+  FindVariableFeatures(nfeatures = 10000) |>
+  ScaleData() |> 
+  RunPCA() |> 
+  FindNeighbors(reduction = "pca", dims = 1:30) |> 
+  FindClusters(verbose = FALSE) |> 
+  RunUMAP(reduction = "pca", dims = 1:30)
+```
+
+```{r}
+p1 <- DimPlot(mutant1)
+p2 <- MapLabels(mutant1, column_name = "seurat_clusters", ncol = 1) &
+  theme(legend.position = "right")
+p1 + p2
+```
+
+```{r}
+MapLabels(mutant1, 
+          column_name = "seurat_clusters", 
+          image_use = "raw", 
+          override_plot_dims = TRUE) +
+  plot_layout(guides = "collect") &
+  guides(fill = guide_legend(override.aes = list(size = 5), 
+                             ncol = 2)) &
+  theme(legend.position = "right")
+```
+```{r}
+saveRDS(mutant1, "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant1.semla.rds")
+```
+
+
+```{r}
+setwd("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant2/")
+getwd()
+
+samples <- ("./filtered_feature_bc_matrix.h5")
+imgs <- "./tissue_lowres_image.png"
+spotfiles <- "./tissue_positions_list.csv"
+json <- "./scalefactors_json.json"
+```
+
+```{r}
+infoTable <- tibble(samples, imgs, spotfiles, json, # Add required columns
+                    sample = ("Mutant2"),
+                    condition = "Mutant") # Add additional column
+```
+
+```{r}
+mutant2 <- ReadVisiumData(infoTable)
+mutant2
+```
+
+```{r}
+spatial_data <- GetStaffli(mutant2)
+mutant2 <- LoadImages(mutant2)
+ImagePlot(mutant2)
+```
+
+```{r}
+p <- MapFeaturesSummary(mutant2, 
+                        features = "nFeature_Spatial", 
+                        subplot_type = "violin")
+p
+```
+
+```{r}
+# Normalize data and find variable features for Visium data
+mutant2 <- mutant2 |>
+  NormalizeData() |>
+  FindVariableFeatures(nfeatures = 10000) |>
+  ScaleData() |> 
+  RunPCA() |> 
+  FindNeighbors(reduction = "pca", dims = 1:30) |> 
+  FindClusters(verbose = FALSE) |> 
+  RunUMAP(reduction = "pca", dims = 1:30)
+```
+
+```{r}
+p1 <- DimPlot(mutant2)
+p2 <- MapLabels(mutant2, column_name = "seurat_clusters", ncol = 1) &
+  theme(legend.position = "right")
+p1 + p2
+```
+
+```{r}
+MapLabels(mutant2, 
+          column_name = "seurat_clusters", 
+          image_use = "raw", 
+          override_plot_dims = TRUE) +
+  plot_layout(guides = "collect") &
+  guides(fill = guide_legend(override.aes = list(size = 5), 
+                             ncol = 2)) &
+  theme(legend.position = "right")
+```
+```{r}
+saveRDS(mutant2, "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant2.semla.rds")
+```
+
+

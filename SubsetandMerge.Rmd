@@ -1,0 +1,205 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(semla)
+```
+
+```{r}
+setwd("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/")
+```
+
+```{r}
+control1 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/control1.semla.rds")
+control2 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/control2.semla.rds")
+mutant1 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant1.semla.rds")
+mutant2 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant2.semla.rds")
+```
+
+```{r}
+control1_lateral_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control1/regions_of_interest/lateral_cortex.csv")
+control1_medial_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control1/regions_of_interest/medial_cortex.csv")
+control1_mge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control1/regions_of_interest/mge.csv")
+control1_lge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control1/regions_of_interest/lge.csv")
+control1_midline <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control1/regions_of_interest/midline.csv")
+
+control2_lateral_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/lateral_cortex.csv")
+control2_medial_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/medial_cortex.csv")
+control2_mge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/mge.csv")
+control2_lge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/lge.csv")
+control2_midline <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/midline.csv")
+
+mutant1_lateral_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant1/regions_of_interest/lateral_cortex.csv")
+mutant1_medial_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant1/regions_of_interest/medial_cortex.csv")
+mutant1_mge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant1/regions_of_interest/mge.csv")
+mutant1_lge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant1/regions_of_interest/lge.csv")
+mutant1_midline <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant1/regions_of_interest/midline.csv")
+
+mutant2_lateral_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant2/regions_of_interest/lateral_cortex.csv")
+mutant2_medial_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant2/regions_of_interest/medial_cortex.csv")
+mutant2_mge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant2/regions_of_interest/mge.csv")
+mutant2_lge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant2/regions_of_interest/lge.csv")
+mutant2_midline <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/mutant2/regions_of_interest/midline.csv")
+```
+
+```{r}
+controlroi <- rbind(mutant2_lateral_cortex, mutant2_medial_cortex, mutant2_mge, mutant2_lge, mutant2_midline)
+```
+
+```{r}
+controlroi <- as.data.frame(controlroi)
+controlroi[] <- lapply(controlroi, function(x) {
+  if (is.character(x)) {
+    gsub("_", "-", x)
+  } else if (is.factor(x)) {
+    as.factor(gsub("_", "-", as.character(x)))
+  } else {
+    x
+  }
+})
+head(controlroi)
+```
+
+
+```{r}
+spots.use <- controlroi$Barcode
+head(spots.use)
+```
+
+```{r}
+mutant2.subset <- SubsetSTData(mutant2, spots = spots.use)
+```
+
+```{r}
+MapLabels(mutant2.subset, 
+          column_name = "seurat_clusters", 
+          image_use = "raw", 
+          override_plot_dims = TRUE) +
+  plot_layout(guides = "collect") &
+  guides(fill = guide_legend(override.aes = list(size = 5), 
+                             ncol = 2)) &
+  theme(legend.position = "right")
+```
+
+```{r}
+control2_lateral_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/lateral_cortex.csv")
+control2_medial_cortex <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/medial_cortex.csv")
+control2_mge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/mge.csv")
+control2_lge <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/lge.csv")
+control2_midline <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/Spatial/raw_data/control2/regions_of_interest/midline.csv")
+```
+
+```{r}
+controlroi <- rbind(control2_lateral_cortex, control2_medial_cortex, control2_mge, control2_lge, control2_midline)
+```
+
+```{r}
+controlroi <- as.data.frame(controlroi)
+controlroi[] <- lapply(controlroi, function(x) {
+  if (is.character(x)) {
+    gsub("2", "1", x)
+  } else if (is.factor(x)) {
+    as.factor(gsub("2", "1", as.character(x)))
+  } else {
+    x
+  }
+})
+head(controlroi)
+```
+```{r}
+spots.use <- controlroi$Barcode
+head(spots.use)
+```
+
+```{r}
+control2.subset <- SubsetSTData(control2, spots = spots.use)
+```
+
+```{r}
+MapLabels(control2.subset, 
+          column_name = "seurat_clusters", 
+          image_use = "raw", 
+          override_plot_dims = TRUE) +
+  plot_layout(guides = "collect") &
+  guides(fill = guide_legend(override.aes = list(size = 5), 
+                             ncol = 2)) &
+  theme(legend.position = "right")
+```
+```{r}
+saveRDS(control2.subset, "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/control2.subset.rds")
+saveRDS(control1.subset, "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/control1.subset.rds")
+saveRDS(mutant1.subset, "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant1.subset.rds")
+saveRDS(mutant2.subset, "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant2.subset.rds")
+```
+
+```{r}
+control1 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/control1.subset.rds")
+control2 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/control2.subset.rds")
+mutant1 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant1.subset.rds")
+mutant2 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant2.subset.rds")
+```
+
+```{r}
+merge.control <- MergeSTData(control1, control2)
+merge.mutant <- MergeSTData(mutant1, mutant2)
+merge.all <- MergeSTData(merge.control, merge.mutant)
+```
+
+```{r}
+MapFeatures(merge.all, features = "nFeature_Spatial", ncol = 2)
+```
+```{r}
+# Normalize data and find variable features for Visium data
+merge.all <- merge.all |>
+  NormalizeData() |>
+  FindVariableFeatures(nfeatures = 10000) |>
+  ScaleData() |> 
+  RunPCA() |> 
+  FindNeighbors(reduction = "pca", dims = 1:30) |> 
+  FindClusters(verbose = FALSE) |> 
+  RunUMAP(reduction = "pca", dims = 1:30)
+```
+
+```{r}
+p1 <- DimPlot(merge.all)
+p2 <- MapLabels(merge.all, column_name = "seurat_clusters", ncol = 2) &
+  theme(legend.position = "right")
+p1 + p2
+```
+
+```{r}
+MapLabels(merge.all, column_name = "seurat_clusters", ncol = 2) &
+  theme(legend.position = "right")
+```
+
+```{r}
+DimPlot(merge.all, split.by = "sample")
+```
+```{r}
+FeaturePlot(merge.all, feature = "Eomes")
+```
+```{r}
+VlnPlot(merge.all, c("Tcf4", "Neurod6"))
+```
+# 4 APs/IPs
+# 3 Migrating Neurons
+# 2 Mature Neurons
+# 1 Interneuron Progenitors 
+# 0 Immature Neurons 
+
+```{r}
+help("RenameIdents")
+merge.all <- RenameIdents(merge.all, "0" = "Immature Neurons", "1" = "Interneuron Progenitors", "2" = "Mature Neurons", "3" = "Migrating Neurons", "4" = "APs and IPs")
+```
+
+```{r}
+DimPlot(merge.all, label = T, split.by = "condition")
+```
+```{r}
+saveRDS(merge.all, "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/merge.subset.renamed.rds")
+```
+
+
+
