@@ -1,0 +1,169 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(Seurat)
+library(semla)
+library(patchwork)
+```
+
+```{r}
+control1 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/control1.semla.rds")
+control2 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/control2.semla.rds")
+mutant1 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant1.semla.rds")
+mutant2 <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant2.semla.rds")
+```
+
+```{r}
+controlroi <- read.csv("./OneDrive - The University of Colorado Denver/10xVisium/Spatial/loupefiles/MeningesA.csv")
+control2roi <- read.csv("./OneDrive - The University of Colorado Denver/10xVisium/Spatial/loupefiles/MeningesB.csv")
+mutant1roi <- read.csv("./OneDrive - The University of Colorado Denver/10xVisium/Spatial/loupefiles/MeningesC.csv")
+mutant2roi <- read.csv("./OneDrive - The University of Colorado Denver/10xVisium/Spatial/loupefiles/MeningesD.csv")
+```
+
+
+```{r}
+mutant2roi <- as.data.frame(mutant2roi)
+mutant2roi[] <- lapply(mutant2roi, function(x) {
+  if (is.character(x)) {
+    gsub("_", "-", x)
+  } else if (is.factor(x)) {
+    as.factor(gsub("_", "-", as.character(x)))
+  } else {
+    x
+  }
+})
+head(mutant2roi)
+```
+
+```{r}
+spots.use <- mutant2roi$Barcode
+head(spots.use)
+```
+
+```{r}
+mutant2.men <- SubsetSTData(mutant2, spots = spots.use)
+```
+
+```{r}
+MapLabels(mutant2.men, 
+          column_name = "seurat_clusters", 
+          image_use = "raw", 
+          pt_size = 2,
+          override_plot_dims = TRUE) +
+  plot_layout(guides = "collect") &
+  guides(fill = guide_legend(override.aes = list(size = 5), 
+                             ncol = 2)) &
+  theme(legend.position = "right")
+```
+
+```{r}
+saveRDS(control1.men, "./OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/contro1men.rds")
+saveRDS(control2.men, "./OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/control2men.rds")
+saveRDS(mutant1.men, "./OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant1men.rds")
+saveRDS(mutant2.men, "./OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/mutant2men.rds")
+```
+
+
+```{r}
+merge.control <- MergeSTData(control1.men, control2.men)
+merge.mutant <- MergeSTData(mutant1.men, mutant2.men)
+merge.all <- MergeSTData(merge.control, merge.mutant)
+```
+
+```{r}
+help("IntegrateLayers")
+merge.all.int <- IntegrateLayers(
+  object = merge.all, method = CCAIntegration,
+  orig.reduction = "pca", new.reduction = "integrated.cca",
+  verbose = FALSE, k.weight = 65
+)
+```
+```{r}
+# Normalize data and find variable features for Visium data
+merge.all <- merge.all |>
+  NormalizeData() |>
+  FindVariableFeatures(nfeatures = 6000) |>
+  ScaleData() |> 
+  RunPCA() |> 
+  FindNeighbors(reduction = "pca", dims = 1:30) |> 
+  FindClusters(verbose = FALSE) |> 
+  RunUMAP(reduction = "pca", dims = 1:30)
+```
+
+```{r}
+merge.all.int <- JoinLayers(merge.all.int)
+p1 <- DimPlot(merge.all)
+p2 <- MapLabels(merge.all, column_name = "seurat_clusters", ncol = 2) &
+  theme(legend.position = "right")
+p1 + p2
+```
+#4 is blood cells 
+#2 Bone progenitors, Sp7 Pdpn 
+#0 cranial mesenchyme/arachnoid/dura
+#3 pia/arachnoid Lama2, NGfr, Rdh10 - leptomeninges
+#1 Brain/mesenchyme 
+
+#1,3 and 0 has meninges clusters compare gene expression 
+
+```{r}
+help("SubsetSTData")
+merge.all.int.subset <- SubsetSTData(merge.all.int, idents = c("0", "1", "2", "3"))
+```
+
+```{r}
+# Normalize data and find variable features for Visium data
+merge.all.int.subset <- merge.all.int.subset |>
+  NormalizeData() |>
+  FindVariableFeatures(nfeatures = 6000) |>
+  ScaleData() |> 
+  RunPCA() |> 
+  FindNeighbors(reduction = "pca", dims = 1:30) |> 
+  FindClusters(verbose = FALSE) |> 
+  RunUMAP(reduction = "pca", dims = 1:30)
+```
+
+```{r}
+saveRDS(merge.all.int.subset, "./OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/merge.all.int.subset.rds")
+```
+
+
+```{r}
+DimPlot(merge.all.int.subset, split.by = 'condition')
+```
+
+
+```{r}
+MapLabels(merge.all.int.subset, 
+          column_name = "seurat_clusters", 
+          image_use = "raw", 
+          pt_size = 2,
+          override_plot_dims = TRUE) +
+  plot_layout(guides = "collect") &
+  guides(fill = guide_legend(override.aes = list(size = 5), 
+                             ncol = 2)) &
+  theme(legend.position = "right")
+```
+
+```{r}
+merge.all.int.subset <- RenameIdents(merge.all.int.subset, "0" = "Pia/Arachnoid", "1" = "Bone Progenitors", "2" = "Brain/Pia", "3" = "Cranial Mesenchyme/Arachnoid/Dura")
+DimPlot(merge.all.int.subset, split.by = 'condition')
+```
+
+```{r}
+meningesonly <- SubsetSTData(merge.all.int.subset, idents = c("Pia/Arachnoid", "Brain/Pia", "Cranial Mesencyhme/Arachnoid/Dura"))
+```
+
+
+
+```{r}
+Idents(meningesonly) <- "condition"
+```
+
+```{r}
+DotPlot(meningesonly, features = c("Cxcl12", "Rdh10", "Aldh1a2", "S100a6", "Crabp2", "Gja1", "Cldn11", dot.scale = 40))
+saveRDS(meningesonly, "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/meningesonly.rds")
+```
+

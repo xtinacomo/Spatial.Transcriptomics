@@ -1,0 +1,176 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+install.packages("igraph")
+devtools::install_github("ZxZhou4150/Redeconve", build_vignettes = F)
+library(igraph)
+library(Redeconve)
+library(Seurat)
+```
+
+```{r}
+so <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/merge.subset.renamed.rds") # the ST object
+so_scref <- readRDS("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/RDSfiles/E14_ref_scRNAseq_processed.rds")
+```
+
+
+```{r}
+DimPlot(so)
+```
+```{r}
+DimPlot(so_scref, group.by = "cell_type")
+```
+
+```{r}
+library(semla)
+DefaultAssay(so) <- "Spatial"
+so <- JoinLayers(so)
+ti <- Sys.time()
+so <- RunNNLS(object = so, 
+              singlecell_object = so_scref,
+              groups = "cell_type")
+```
+```{r}
+sprintf("RunNNLS completed in %s seconds", round(Sys.time() - ti, digits = 2))
+```
+
+```{r}
+# Check available cell types
+rownames(so)
+```
+
+```{r}
+# Plot selected cell types
+DefaultAssay(so) <- "celltypeprops"
+
+selected_celltypes <- c("Migratory Neurons", "Immature Neurons", "Interneurons", "Mature Neurons","Cycling", "IPs", "APs")
+```
+
+```{r}
+so <- LoadImages(so, image_height = 1e3)
+```
+```{r}
+library(tibble)
+library(dplyr)
+library(patchwork)
+plots <- lapply(seq_along(selected_celltypes), function(i) {
+  MapFeatures(so, pt_size = 1.3,
+            features = selected_celltypes[i], image_use = "raw",
+            arrange_features = "row", scale = "shared", 
+            override_plot_dims = TRUE,
+            colors = RColorBrewer::brewer.pal(n = 9, name = "Spectral") |> rev(), 
+            scale_alpha = TRUE)  +
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "right", legend.margin = margin(b = 50),
+        legend.text = element_text(angle = 0),
+        plot.title = element_blank())
+}) |> setNames(nm = selected_celltypes)
+plots
+```
+
+```{r}
+colors <- c("#E69F00", # Orange
+            "#56B4E9", # Sky Blue
+            "#009E73", # Green
+            "#F0E442", # Yellow
+            "#0072B2", # Blue
+            "#D55E00", # Red-Orange
+            "#CC79A7", # Pink
+            "#999999", # Gray
+            , # Dark Red-Purple
+            "#44AA99") # Teal
+```
+
+```{r}
+help("MapMultipleFeatures")
+# Plot multiple features
+mf <- MapMultipleFeatures(so, 
+                    image_use = "raw", 
+                    scale = "free",
+                    pt_size = 2, max_cutoff = 0.99,
+                    override_plot_dims = TRUE, 
+                    colors = c("#E69F00", "#D55E00", "#0072B2", "#CC79A7","#F0E442", "#009E73","#882255"),
+                    features = selected_celltypes[1:7]) +
+  plot_layout(guides = "collect")
+mf
+```
+```{r}
+help(ggsave)
+ggsave(mf, filename = "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/outputs/semladeconvolution.jpeg")
+```
+
+```{r}
+nmf_data <- FetchData(so, selected_celltypes) |> 
+  RcppML::nmf(k = 10, verbose = F)
+
+nmf_data_h <- nmf_data$h |> as.data.frame()
+rownames(nmf_data_h) <- paste0("Factor_", 1:10)
+colnames(nmf_data_h) <- selected_celltypes
+
+nmf_data_h <- nmf_data_h |> 
+  mutate_at(colnames(nmf_data_h), 
+            ~(scale(., center = FALSE, scale = max(., na.rm = TRUE)/1)))
+
+nmf_data_h$Factor <- rownames(nmf_data_h) |> 
+  factor(levels = paste0("Factor_", 1:10))
+nmf_data_h_df <- nmf_data_h |> 
+  tidyr::pivot_longer(cols = all_of(selected_celltypes), 
+                      names_to = "Cell", 
+                      values_to = "Weight")
+
+ggplot(nmf_data_h_df, aes(x=Factor, y=Cell, size=Weight, color=Weight)) +
+  geom_point() +
+  labs(title="Cell type contribution", x="Factor", y = "Cell type", 
+       color = "", size = "Scaled weight") +
+  scale_color_viridis_c(direction = -1, option = "magma") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1), 
+        panel.grid = element_blank())
+```
+```{r}
+data<- (so@assays[["celltypeprops"]]@data)
+write.csv(data, "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/outputs/deconvolutionsemla.csv")
+```
+
+```{r}
+values <- read.csv("/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/outputs/deconvolutionvalues.csv")
+tail(values)
+```
+
+
+```{r}
+help(pie)
+c1pie <- pie(values$Control1,
+    labels = c("APs", "Cycling", "IPs", "Immature Neurons", "Interneurons", "Mature Neurons", "Migratory Neurons"),
+    col = c("#882255","#F0E442", "#009E73", "#D55E00","#0072B2","#CC79A7","#E69F00"))
+ggsave(c1pie, filename = "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/outputs/c1pie.jpeg")
+```
+
+```{r}
+help(pie)
+c2pie <- pie(values$Control2,
+    labels = c("APs", "Cycling", "IPs", "Immature Neurons", "Interneurons", "Mature Neurons", "Migratory Neurons"),
+    col = c("#882255","#F0E442", "#009E73", "#D55E00","#0072B2","#CC79A7","#E69F00"))
+c2pie
+ggsave(c2pie, filename = "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/outputs/c2pie.jpeg")
+```
+
+```{r}
+help(pie)
+mut1pie <- pie(values$Mutant1,
+    labels = c("APs", "Cycling", "IPs", "Immature Neurons", "Interneurons", "Mature Neurons", "Migratory Neurons"),
+    col = c("#882255","#F0E442", "#009E73", "#D55E00","#0072B2","#CC79A7","#E69F00"))
+ggsave(mut1pie, filename = "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/outputs/cm1pie.jpeg")
+```
+```{r}
+help(pie)
+mut2pie <- pie(values$Mutant2,
+    labels = c("APs", "Cycling", "IPs", "Immature Neurons", "Interneurons", "Mature Neurons", "Migratory Neurons"),
+    col = c("#882255","#F0E442", "#009E73", "#D55E00","#0072B2","#CC79A7","#E69F00"))
+ggsave(mut2pie, filename = "/Users/christinacomo/OneDrive - The University of Colorado Denver/10xVisium/Spatial/outputs/m2pie.jpeg")
+```
+
